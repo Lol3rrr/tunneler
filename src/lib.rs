@@ -7,7 +7,7 @@ pub use message::*;
 mod connections;
 pub use connections::*;
 
-mod server;
+pub mod server;
 pub use server::*;
 
 mod client;

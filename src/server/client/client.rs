@@ -1,28 +1,44 @@
+use crate::server::client::ClientManager;
 use crate::{Connection, Connections};
 use crate::{Message, MessageHeader, MessageType};
 
 #[derive(Clone)]
 pub struct Client {
+    id: u32,
     con: std::sync::Arc<Connection>,
     user_cons: std::sync::Arc<Connections<Connection>>,
+    client_manager: std::sync::Arc<ClientManager>,
 }
 
 impl Client {
-    pub fn new(con: std::sync::Arc<Connection>) -> Client {
+    pub fn new(
+        id: u32,
+        con: std::sync::Arc<Connection>,
+        client_manager: std::sync::Arc<ClientManager>,
+    ) -> Client {
         let connections: std::sync::Arc<Connections<Connection>> =
             std::sync::Arc::new(Connections::new());
 
         Client {
+            id,
             con,
             user_cons: connections,
+            client_manager,
         }
+    }
+
+    pub fn get_id(&self) -> u32 {
+        self.id
     }
 
     pub async fn read_respond(self) {
         loop {
             let mut head_buf = [0; 13];
             let header = match self.con.read(&mut head_buf).await {
-                Ok(0) => continue,
+                Ok(0) => {
+                    self.close();
+                    return;
+                }
                 Ok(_) => {
                     let h = MessageHeader::deserialize(head_buf);
                     if h.is_none() {
@@ -44,7 +60,8 @@ impl Client {
             let mut buf = vec![0; data_length];
             match self.con.read(&mut buf).await {
                 Ok(0) => {
-                    break;
+                    self.close();
+                    return;
                 }
                 Ok(n) => {
                     if n != data_length {
@@ -101,6 +118,11 @@ impl Client {
         };
     }
 
+    fn close(&self) {
+        println!("Closing Client-Connection");
+        self.client_manager.remove_con(self.get_id());
+    }
+
     /// Process a new user connection
     ///
     /// Params:
@@ -129,7 +151,7 @@ impl Client {
                         Ok(_) => {}
                         Err(e) => {
                             println!("Sending: {}", e);
-                            println!("Needs to close the client connection");
+                            client.close();
                             return;
                         }
                     };

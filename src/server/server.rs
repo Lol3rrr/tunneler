@@ -1,10 +1,9 @@
+use crate::server::client::{Client, ClientManager};
 use crate::Arguments;
 use crate::{Connection, Error, MessageHeader, MessageType};
 
 use rand::Rng;
 use tokio::net::TcpListener;
-
-mod client;
 
 #[derive(Debug)]
 pub struct Server {
@@ -80,7 +79,7 @@ impl Server {
     async fn accept_clients(
         listen: TcpListener,
         key: String,
-        clients: std::sync::Arc<std::sync::Mutex<Vec<client::Client>>>,
+        clients: std::sync::Arc<ClientManager>,
     ) {
         loop {
             // Get Client
@@ -99,12 +98,11 @@ impl Server {
 
             println!("Accepted client");
 
-            let client_con = client::Client::new(client);
+            let c_id: u32 = rand::thread_rng().gen();
+            let client_con = Client::new(c_id, client, clients.clone());
             tokio::task::spawn(client_con.clone().read_respond());
 
-            let mut client_list = clients.lock().unwrap();
-            client_list.push(client_con);
-            drop(client_list);
+            clients.add(client_con);
         }
     }
 
@@ -118,7 +116,7 @@ impl Server {
         let req_bind_addr = format!("127.0.0.1:{}", self.public_port);
         let req_listener = TcpListener::bind(&req_bind_addr).await?;
 
-        let clients = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+        let clients = std::sync::Arc::new(ClientManager::new());
 
         // Task to async accept new clients
         tokio::task::spawn(Server::accept_clients(
@@ -127,28 +125,25 @@ impl Server {
             clients.clone(),
         ));
 
+        let mut rng = rand::thread_rng();
+
         loop {
-            let mut rng = rand::thread_rng();
-
-            loop {
-                match req_listener.accept().await {
-                    Ok((raw_socket, _)) => {
-                        let id = rng.gen();
-
-                        let socket = std::sync::Arc::new(Connection::new(raw_socket));
-
-                        let client_list = clients.lock().unwrap();
-                        // TODO update the client selection process
-                        let client = client_list.get(0).unwrap();
-                        client.new_con(id, socket);
-                        drop(client_list);
-                    }
-                    Err(e) => {
-                        println!("Accepting Req-Connection: {}", e);
-                        continue;
-                    }
+            let socket = match req_listener.accept().await {
+                Ok((raw_socket, _)) => std::sync::Arc::new(Connection::new(raw_socket)),
+                Err(e) => {
+                    println!("Accepting Req-Connection: {}", e);
+                    continue;
                 }
+            };
+
+            let id = rng.gen();
+            let client = clients.get();
+            if client.is_none() {
+                println!("Could not obtain a Client-Connection");
+                continue;
             }
+
+            client.unwrap().new_con(id, socket);
         }
     }
 }
