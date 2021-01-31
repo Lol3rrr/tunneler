@@ -5,6 +5,8 @@ pub enum MessageType {
     Data,
     Heartbeat,
     Establish,
+    Key,
+    Verify,
     Acknowledge,
 }
 
@@ -16,7 +18,9 @@ impl MessageType {
             2 => Some(MessageType::Data),
             3 => Some(MessageType::Heartbeat),
             4 => Some(MessageType::Establish),
-            5 => Some(MessageType::Acknowledge),
+            5 => Some(MessageType::Key),
+            6 => Some(MessageType::Verify),
+            7 => Some(MessageType::Acknowledge),
             _ => None,
         }
     }
@@ -28,7 +32,9 @@ impl MessageType {
             MessageType::Data => 2,
             MessageType::Heartbeat => 3,
             MessageType::Establish => 4,
-            MessageType::Acknowledge => 5,
+            MessageType::Key => 5,
+            MessageType::Verify => 6,
+            MessageType::Acknowledge => 7,
         }
     }
 }
@@ -54,8 +60,16 @@ fn message_type_deserialize_establish() {
     assert_eq!(Some(MessageType::Establish), MessageType::deserialize(4));
 }
 #[test]
+fn message_type_deserialize_key() {
+    assert_eq!(Some(MessageType::Key), MessageType::deserialize(5));
+}
+#[test]
+fn message_type_deserialize_verify() {
+    assert_eq!(Some(MessageType::Verify), MessageType::deserialize(6));
+}
+#[test]
 fn message_type_deserialize_acknowledge() {
-    assert_eq!(Some(MessageType::Acknowledge), MessageType::deserialize(5));
+    assert_eq!(Some(MessageType::Acknowledge), MessageType::deserialize(7));
 }
 #[test]
 fn message_type_deserialize_invalid() {
@@ -83,6 +97,14 @@ fn message_type_serialize_establish() {
     assert_eq!(4, MessageType::Establish.serialize());
 }
 #[test]
+fn message_type_serialize_key() {
+    assert_eq!(5, MessageType::Key.serialize());
+}
+#[test]
+fn message_type_serialize_verify() {
+    assert_eq!(6, MessageType::Verify.serialize());
+}
+#[test]
 fn message_type_serialize_acknowledge() {
-    assert_eq!(5, MessageType::Acknowledge.serialize());
+    assert_eq!(7, MessageType::Acknowledge.serialize());
 }

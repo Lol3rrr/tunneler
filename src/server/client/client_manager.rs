@@ -57,9 +57,12 @@ impl ClientManager {
             }
         }
 
-        if remove_index.is_some() {
-            client_data.remove(remove_index.unwrap());
-        }
+        match remove_index {
+            None => {}
+            Some(i) => {
+                client_data.remove(i);
+            }
+        };
 
         drop(client_data);
     }

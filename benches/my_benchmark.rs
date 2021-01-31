@@ -2,6 +2,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 use tunneler::{Message, MessageHeader, MessageType};
 
+mod crypto;
+
 pub fn criterion_benchmark(c: &mut Criterion) {
     let data = [0; 13];
     c.bench_function("Deserialize-Message-Header", |b| {
@@ -16,5 +18,5 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("Serialize-Message", |b| b.iter(|| msg.serialize()));
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, criterion_benchmark, crypto::gcd::bench);
 criterion_main!(benches);
