@@ -62,24 +62,28 @@ impl Client {
             }
 
             let data_length = header.get_length() as usize;
-            let mut buf = vec![0; data_length];
-            match self.con.read(&mut buf).await {
-                Ok(0) => {
-                    self.close();
-                    return;
-                }
-                Ok(n) => {
-                    if n != data_length {
-                        println!(
-                            "Read bytes is different to the data-length: {} != {}",
-                            n, data_length
-                        );
+            let mut to_read = data_length;
+            while to_read > 0 {
+                let mut read_buf = vec![0; to_read];
+                match self.con.read(&mut read_buf).await {
+                    Ok(0) => {
+                        self.close();
+                        return;
                     }
+                    Ok(n) => {
+                        to_read -= n;
 
-                    match self.user_cons.get(header.get_id()) {
-                        Some(s) => match header.get_kind() {
+                        let user_con = match self.user_cons.get(header.get_id()) {
+                            Some(s) => s,
+                            None => {
+                                println!("No client found with ID: {}", header.get_id());
+                                continue;
+                            }
+                        };
+
+                        match header.get_kind() {
                             MessageType::Data => {
-                                match s.write(&buf).await {
+                                match user_con.write(&read_buf[0..n]).await {
                                     Ok(_) => {}
                                     Err(e) => {
                                         println!("Forwarding: {}", e);
@@ -93,20 +97,17 @@ impl Client {
                                     header.get_kind()
                                 );
                             }
-                        },
-                        None => {
-                            println!("No client found for this");
-                        }
-                    };
+                        };
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        continue;
+                    }
+                    Err(e) => {
+                        println!("Reading client: {}", e);
+                        return;
+                    }
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                Err(e) => {
-                    println!("Reading client: {}", e);
-                    return;
-                }
-            };
+            }
         }
     }
 
