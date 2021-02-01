@@ -56,6 +56,11 @@ impl Client {
                 }
             };
 
+            if let MessageType::Heartbeat = header.get_kind() {
+                println!("[{}] Received Heartbeat", self.id);
+                continue;
+            }
+
             let data_length = header.get_length() as usize;
             let mut buf = vec![0; data_length];
             match self.con.read(&mut buf).await {
