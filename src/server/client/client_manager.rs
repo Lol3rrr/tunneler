@@ -24,6 +24,10 @@ impl ClientManager {
     // the first one
     pub fn get(&self) -> Option<Client> {
         let clients_data = self.clients.lock().unwrap();
+        if clients_data.len() <= 0 {
+            return None;
+        }
+
         let index =
             self.index.load(std::sync::atomic::Ordering::SeqCst) as usize % clients_data.len();
         let client = match clients_data.get(index) {
