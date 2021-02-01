@@ -1,6 +1,8 @@
 mod error;
 pub use error::Error;
 
+pub mod general;
+
 mod message;
 pub use message::*;
 

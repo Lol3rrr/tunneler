@@ -2,7 +2,7 @@ use crate::Arguments;
 use crate::{Connection, ConnectionManager, Connections};
 use crate::{Error, Message, MessageHeader, MessageType};
 
-use rsa::{BigUint, PaddingScheme, PublicKey, PublicKeyParts, RSAPrivateKey, RSAPublicKey};
+use rsa::{BigUint, PaddingScheme, PublicKey, RSAPublicKey};
 use tokio::net::TcpStream;
 
 pub struct Client {
@@ -10,7 +10,7 @@ pub struct Client {
     ip: String,
     out_ip: String,
     out_port: u32,
-    key: String,
+    key: Vec<u8>,
 }
 
 impl Client {
@@ -21,12 +21,14 @@ impl Client {
 
         let out = "localhost";
 
+        let key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key File");
+
         Ok(Client {
-            listen_port: cli.listen_port,
+            listen_port: cli.listen_port.expect("Loading Listen-Port"),
             ip: cli.ip.unwrap(),
             out_ip: out.to_owned(),
-            out_port: cli.public_port,
-            key: cli.key,
+            out_port: cli.public_port.expect("Loading Public-Port"),
+            key: key,
         })
     }
 
@@ -183,7 +185,7 @@ impl Client {
     // 4. Server decrypts the message and checks if the password/key is valid
     // 5a. If valid: Server sends an Acknowledge message and its done
     // 5b. If invalid: Server closes the connection
-    async fn establish_connection(adr: &str, key: &str) -> Option<std::sync::Arc<Connection>> {
+    async fn establish_connection(adr: &str, key: &Vec<u8>) -> Option<std::sync::Arc<Connection>> {
         let connection = match TcpStream::connect(&adr).await {
             Ok(c) => c,
             Err(e) => {
@@ -235,11 +237,7 @@ impl Client {
         .expect("Could not create Public-Key");
 
         let encrypted_key = pub_key
-            .encrypt(
-                &mut rand::rngs::OsRng,
-                PaddingScheme::PKCS1v15Encrypt,
-                key.as_bytes(),
-            )
+            .encrypt(&mut rand::rngs::OsRng, PaddingScheme::PKCS1v15Encrypt, key)
             .expect("Could not encrypt Key");
 
         let msg_header = MessageHeader::new(0, MessageType::Verify, encrypted_key.len() as u64);

@@ -1,3 +1,4 @@
+use std::io::prelude::*;
 use structopt::StructOpt;
 use tunneler::*;
 
@@ -5,6 +6,7 @@ use tunneler::*;
 enum Command {
     Server,
     Client,
+    GenerateKey,
 }
 
 /// This command turns the raw string command into the Enum or returns None
@@ -13,12 +15,20 @@ fn parse_command(cmd: &str) -> Option<Command> {
     match cmd {
         "server" => Some(Command::Server),
         "client" => Some(Command::Client),
+        "key-gen" => Some(Command::GenerateKey),
         _ => None,
     }
 }
 
 fn main() {
-    let arguments = Arguments::from_args();
+    let mut arguments = Arguments::from_args();
+
+    if arguments.key_path.is_none() {
+        let mut key_path = dirs::home_dir().unwrap();
+        key_path.push(".tunneler");
+        key_path.push("key");
+        arguments.key_path = Some(key_path.as_path().to_str().unwrap().to_string());
+    }
 
     let command = parse_command(&arguments.command);
     if command.is_none() {
@@ -43,6 +53,21 @@ fn main() {
         Command::Client => {
             rt.block_on(Client::new_from_args(arguments).unwrap().start())
                 .unwrap();
+        }
+        Command::GenerateKey => {
+            println!("Generating Server-Key");
+            let key = general::generate_key(128);
+
+            let raw_path = arguments.key_path.unwrap();
+            let path = std::path::Path::new(&raw_path);
+
+            std::fs::create_dir_all(path.parent().unwrap())
+                .expect("Could not create directory for key-file");
+            let mut key_file = std::fs::File::create(&path).expect("Could not create key-file");
+            key_file
+                .write_all(&key)
+                .expect("Could not write to key-file");
+            println!("Wrote Key to file: {}", raw_path);
         }
     };
 }

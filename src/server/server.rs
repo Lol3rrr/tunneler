@@ -4,22 +4,24 @@ use crate::{Connection, Error, Message, MessageHeader, MessageType};
 
 use rand::rngs::OsRng;
 use rand::Rng;
-use rsa::{PaddingScheme, PublicKey, PublicKeyParts, RSAPrivateKey, RSAPublicKey};
+use rsa::{PaddingScheme, PublicKeyParts, RSAPrivateKey, RSAPublicKey};
 use tokio::net::TcpListener;
 
 #[derive(Debug)]
 pub struct Server {
     listen_port: u32,
     public_port: u32,
-    key: String,
+    key: Vec<u8>,
 }
 
 impl Server {
     pub fn new_from_args(cli: Arguments) -> Result<Server, Error> {
+        let key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key file");
+
         Ok(Server {
-            listen_port: cli.listen_port,
-            public_port: cli.public_port,
-            key: cli.key,
+            listen_port: cli.listen_port.expect("Loading Listen-Port"),
+            public_port: cli.public_port.expect("Loading Public-Port"),
+            key: key,
         })
     }
 
@@ -31,7 +33,7 @@ impl Server {
     // 4. Server decrypts the message and checks if the password/key is valid
     // 5a. If valid: Server sends an Acknowledge message and its done
     // 5b. If invalid: Server closes the connection
-    async fn validate_connection(con: std::sync::Arc<Connection>, key: &str) -> bool {
+    async fn validate_connection(con: std::sync::Arc<Connection>, key: &Vec<u8>) -> bool {
         // Step 2
         let mut rng = OsRng;
         let priv_key = RSAPrivateKey::new(&mut rng, 2048).expect("Failed to generate private key");
@@ -89,7 +91,7 @@ impl Server {
         };
 
         let recv_key = match priv_key.decrypt(PaddingScheme::PKCS1v15Encrypt, recv_encrypted_key) {
-            Ok(raw_key) => String::from_utf8(raw_key).unwrap(),
+            Ok(raw_key) => raw_key,
             Err(e) => {
                 println!("Error decrypting received-key: {}", e);
                 return false;
@@ -97,7 +99,7 @@ impl Server {
         };
 
         // Step 5
-        if recv_key != key {
+        if recv_key != *key {
             // Step 5a
             println!("The keys are not matching");
             return false;
@@ -118,7 +120,7 @@ impl Server {
 
     async fn accept_clients(
         listen: TcpListener,
-        key: String,
+        key: Vec<u8>,
         clients: std::sync::Arc<ClientManager>,
     ) {
         loop {
