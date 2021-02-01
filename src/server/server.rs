@@ -21,7 +21,7 @@ impl Server {
         Ok(Server {
             listen_port: cli.listen_port.expect("Loading Listen-Port"),
             public_port: cli.public_port.expect("Loading Public-Port"),
-            key: key,
+            key,
         })
     }
 
@@ -33,7 +33,7 @@ impl Server {
     // 4. Server decrypts the message and checks if the password/key is valid
     // 5a. If valid: Server sends an Acknowledge message and its done
     // 5b. If invalid: Server closes the connection
-    async fn validate_connection(con: std::sync::Arc<Connection>, key: &Vec<u8>) -> bool {
+    async fn validate_connection(con: std::sync::Arc<Connection>, key: &[u8]) -> bool {
         // Step 2
         let mut rng = OsRng;
         let priv_key = RSAPrivateKey::new(&mut rng, 2048).expect("Failed to generate private key");
@@ -99,7 +99,7 @@ impl Server {
         };
 
         // Step 5
-        if recv_key != *key {
+        if recv_key != key {
             // Step 5a
             println!("The keys are not matching");
             return false;

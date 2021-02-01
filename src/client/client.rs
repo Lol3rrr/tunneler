@@ -28,7 +28,7 @@ impl Client {
             ip: cli.ip.unwrap(),
             out_ip: out.to_owned(),
             out_port: cli.public_port.expect("Loading Public-Port"),
-            key: key,
+            key,
         })
     }
 
@@ -185,7 +185,7 @@ impl Client {
     // 4. Server decrypts the message and checks if the password/key is valid
     // 5a. If valid: Server sends an Acknowledge message and its done
     // 5b. If invalid: Server closes the connection
-    async fn establish_connection(adr: &str, key: &Vec<u8>) -> Option<std::sync::Arc<Connection>> {
+    async fn establish_connection(adr: &str, key: &[u8]) -> Option<std::sync::Arc<Connection>> {
         let connection = match TcpStream::connect(&adr).await {
             Ok(c) => c,
             Err(e) => {
