@@ -10,8 +10,11 @@ pub struct Arguments {
     #[structopt(short = "l")]
     pub listen_port: Option<u32>,
 
-    #[structopt(long)]
-    pub ip: Option<String>,
+    #[structopt(long = "ip")]
+    pub server_ip: Option<String>,
+
+    #[structopt(long = "out-ip", default_value = "localhost")]
+    pub out_ip: String,
 
     #[structopt(long = "key", short = "k")]
     pub key_path: Option<String>,

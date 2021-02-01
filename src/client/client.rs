@@ -15,18 +15,16 @@ pub struct Client {
 
 impl Client {
     pub fn new_from_args(cli: Arguments) -> Result<Client, Error> {
-        if cli.ip.is_none() {
+        if cli.server_ip.is_none() {
             return Err(Error::MissingConfig("IP".to_owned()));
         }
-
-        let out = "localhost";
 
         let key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key File");
 
         Ok(Client {
             listen_port: cli.listen_port.expect("Loading Listen-Port"),
-            ip: cli.ip.unwrap(),
-            out_ip: out.to_owned(),
+            ip: cli.server_ip.unwrap(),
+            out_ip: cli.out_ip,
             out_port: cli.public_port.expect("Loading Public-Port"),
             key,
         })
