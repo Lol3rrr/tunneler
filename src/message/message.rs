@@ -33,7 +33,7 @@ impl Message {
         &self.header
     }
     pub fn get_data(&self) -> &[u8] {
-        return self.data.as_slice();
+        self.data.as_slice()
     }
 }
 

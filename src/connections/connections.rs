@@ -4,6 +4,12 @@ pub struct Connections<T> {
     connections: DashMap<u32, std::sync::Arc<T>>,
 }
 
+impl<T> Default for Connections<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> Connections<T> {
     pub fn new() -> Connections<T> {
         Connections {

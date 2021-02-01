@@ -21,9 +21,7 @@ impl MessageHeader {
 
         let id = u32::from_le_bytes(id_part.try_into().unwrap());
         let kind = MessageType::deserialize(kind_part);
-        if kind.is_none() {
-            return None;
-        }
+        kind.as_ref()?;
         let kind = kind.unwrap();
         let length = u64::from_le_bytes(length_part.try_into().unwrap());
 

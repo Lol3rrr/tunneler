@@ -5,6 +5,12 @@ pub struct ClientManager {
     clients: std::sync::Mutex<Vec<Client>>,
 }
 
+impl Default for ClientManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClientManager {
     /// Creates a new empty Client-Manager
     pub fn new() -> ClientManager {

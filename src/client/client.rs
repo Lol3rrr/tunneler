@@ -201,9 +201,7 @@ impl Client {
             }
             Ok(_) => {
                 let msg = MessageHeader::deserialize(head_buf);
-                if msg.is_none() {
-                    return None;
-                }
+                msg.as_ref()?;
                 msg.unwrap()
             }
             Err(e) => {
@@ -263,10 +261,7 @@ impl Client {
                 }
                 Ok(_) => {
                     let header = MessageHeader::deserialize(buf);
-                    if header.is_none() {
-                        return None;
-                    }
-                    let header = header.unwrap();
+                    let header = header.as_ref()?;
 
                     if *header.get_kind() != MessageType::Acknowledge {
                         return None;
@@ -310,12 +305,11 @@ impl Client {
                 }
             };
 
-            match Client::handle_connection(connection_arc, outgoing.clone(), pool.clone()).await {
-                Err(e) => {
-                    println!("{}", e);
-                }
-                Ok(_) => {}
-            };
+            if let Err(e) =
+                Client::handle_connection(connection_arc, outgoing.clone(), pool.clone()).await
+            {
+                println!("{}", e);
+            }
         }
     }
 }
