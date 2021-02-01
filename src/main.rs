@@ -42,6 +42,7 @@ fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(core_count)
         .enable_io()
+        .enable_time()
         .build()
         .unwrap();
 
