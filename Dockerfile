@@ -14,13 +14,9 @@ RUN cargo build --release
 FROM debian:buster-slim
 ARG APP=/usr/src/app
 
-RUN groupadd $APP_USER \
-    && useradd -g $APP_USER $APP_USER \
-    && mkdir -p ${APP}
+RUN mkdir -p ${APP}
 
 COPY --from=builder /tunneler/target/release/tunneler ${APP}/tunneler
-
-RUN chown -R $APP_USER:$APP_USER ${APP}
 
 WORKDIR ${APP}
 
