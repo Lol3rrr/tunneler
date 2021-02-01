@@ -39,8 +39,11 @@ fn main() {
     let core_count = num_cpus::get();
     println!("Cores: {}", core_count);
 
+    let threads = std::cmp::max(2, core_count);
+    println!("Threads: {}", threads);
+
     let rt = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(core_count)
+        .worker_threads(threads)
         .enable_io()
         .enable_time()
         .build()
