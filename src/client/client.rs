@@ -280,6 +280,24 @@ impl Client {
         Some(connection_arc)
     }
 
+    pub async fn heartbeat(con: std::sync::Arc<Connection>, wait_time: std::time::Duration) {
+        loop {
+            println!("Sending Heartbeat");
+
+            let msg_header = MessageHeader::new(0, MessageType::Heartbeat, 0);
+            let msg = Message::new(msg_header, Vec::new());
+
+            match con.write(&msg.serialize()).await {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Sending Heartbeat: {}", e);
+                }
+            };
+
+            tokio::time::sleep(wait_time).await;
+        }
+    }
+
     pub async fn start(&self) -> Result<(), Error> {
         println!("Starting...");
 
@@ -323,6 +341,11 @@ impl Client {
             println!("Connected to server");
 
             attempts = 0;
+
+            tokio::task::spawn(Client::heartbeat(
+                connection_arc.clone(),
+                std::time::Duration::from_secs(15),
+            ));
 
             if let Err(e) =
                 Client::handle_connection(connection_arc, outgoing.clone(), pool.clone()).await
