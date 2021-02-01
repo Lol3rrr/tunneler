@@ -289,6 +289,9 @@ impl Client {
 
             match con.write(&msg.serialize()).await {
                 Ok(_) => {}
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
                 Err(e) => {
                     println!("Sending Heartbeat: {}", e);
                     return;
