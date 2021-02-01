@@ -291,6 +291,7 @@ impl Client {
                 Ok(_) => {}
                 Err(e) => {
                     println!("Sending Heartbeat: {}", e);
+                    return;
                 }
             };
 
