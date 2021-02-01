@@ -284,7 +284,6 @@ impl Client {
         println!("Starting...");
 
         let bind_ip = format!("{}:{}", self.ip, self.listen_port);
-        println!("Connecting to: {}", bind_ip);
 
         let manager = ConnectionManager::new(&self.out_ip, self.out_port);
         let pool = mobc::Pool::builder()
@@ -299,6 +298,8 @@ impl Client {
         let wait_base: u64 = 2;
 
         loop {
+            println!("Conneting to server: {}", bind_ip);
+
             let connection_arc = match Client::establish_connection(&bind_ip, &self.key).await {
                 Some(c) => c,
                 None => {
@@ -309,12 +310,17 @@ impl Client {
                             rand::rngs::ThreadRng::default().next_u64() % 1000,
                         ))
                         .unwrap();
-                    println!("Waiting {:?} before attempting again", final_wait_time);
+                    println!(
+                        "Waiting {:?} before trying to connect again",
+                        final_wait_time
+                    );
                     tokio::time::sleep(final_wait_time).await;
 
                     continue;
                 }
             };
+
+            println!("Connected to server");
 
             attempts = 0;
 
