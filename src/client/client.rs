@@ -2,6 +2,7 @@ use crate::Arguments;
 use crate::{Connection, ConnectionManager, Connections};
 use crate::{Error, Message, MessageHeader, MessageType};
 
+use rand::RngCore;
 use rsa::{BigUint, PaddingScheme, PublicKey, RSAPublicKey};
 use tokio::net::TcpStream;
 
@@ -294,13 +295,28 @@ impl Client {
         let outgoing: std::sync::Arc<Connections<mobc::Connection<ConnectionManager>>> =
             std::sync::Arc::new(Connections::new());
 
+        let mut attempts = 0;
+        let wait_base: u64 = 2;
+
         loop {
             let connection_arc = match Client::establish_connection(&bind_ip, &self.key).await {
                 Some(c) => c,
                 None => {
+                    attempts += 1;
+                    let raw_time = std::time::Duration::from_secs(wait_base.pow(attempts));
+                    let final_wait_time = raw_time
+                        .checked_add(std::time::Duration::from_millis(
+                            rand::rngs::ThreadRng::default().next_u64() % 1000,
+                        ))
+                        .unwrap();
+                    println!("Waiting {:?} before attempting again", final_wait_time);
+                    tokio::time::sleep(final_wait_time).await;
+
                     continue;
                 }
             };
+
+            attempts = 0;
 
             if let Err(e) =
                 Client::handle_connection(connection_arc, outgoing.clone(), pool.clone()).await
