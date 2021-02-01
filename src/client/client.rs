@@ -19,7 +19,8 @@ impl Client {
             return Err(Error::MissingConfig("IP".to_owned()));
         }
 
-        let key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key File");
+        let raw_key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key File");
+        let key = base64::decode(raw_key).unwrap();
 
         Ok(Client {
             listen_port: cli.listen_port.expect("Loading Listen-Port"),

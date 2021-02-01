@@ -16,7 +16,8 @@ pub struct Server {
 
 impl Server {
     pub fn new_from_args(cli: Arguments) -> Result<Server, Error> {
-        let key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key file");
+        let raw_key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key file");
+        let key = base64::decode(raw_key).unwrap();
 
         Ok(Server {
             listen_port: cli.listen_port.expect("Loading Listen-Port"),
@@ -150,7 +151,6 @@ impl Server {
 
     pub async fn start(self) -> Result<(), Error> {
         println!("Starting...");
-        println!("{:?}", self);
 
         let listen_bind_addr = format!("127.0.0.1:{}", self.listen_port);
         let listen_listener = TcpListener::bind(&listen_bind_addr).await?;

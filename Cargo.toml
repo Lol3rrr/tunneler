@@ -15,6 +15,7 @@ dashmap = { version = "4.0.2" }
 mobc = { version = "0.7.0" }
 rsa = { version = "0.3.0" }
 dirs = { version = "3.0.1" }
+base64 = { version = "0.13.0" }
 
 [dev-dependencies]
 criterion = "0.3"
@@ -22,3 +23,4 @@ criterion = "0.3"
 [[bench]]
 name = "my_benchmark"
 harness = false
+path = "./benches/my_benchmark.rs"

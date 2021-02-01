@@ -56,7 +56,8 @@ fn main() {
         }
         Command::GenerateKey => {
             println!("Generating Server-Key");
-            let key = general::generate_key(128);
+            let raw_key = general::generate_key(64);
+            let key = base64::encode(raw_key);
 
             let raw_path = arguments.key_path.unwrap();
             let path = std::path::Path::new(&raw_path);
@@ -65,7 +66,7 @@ fn main() {
                 .expect("Could not create directory for key-file");
             let mut key_file = std::fs::File::create(&path).expect("Could not create key-file");
             key_file
-                .write_all(&key)
+                .write_all(key.as_bytes())
                 .expect("Could not write to key-file");
             println!("Wrote Key to file: {}", raw_path);
         }
