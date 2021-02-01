@@ -1,0 +1,17 @@
+name: Rust Verification
+on: [push]
+jobs:
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: icepuma/rust-action@master
+        with:
+          args: cargo clippy -- --Dwarnings
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: icepuma/rust-action@master
+        with:
+          args: cargo test
