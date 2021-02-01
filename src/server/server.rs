@@ -152,13 +152,16 @@ impl Server {
     pub async fn start(self) -> Result<(), Error> {
         println!("Starting...");
 
-        let listen_bind_addr = format!("127.0.0.1:{}", self.listen_port);
+        let listen_bind_addr = format!("0.0.0.0:{}", self.listen_port);
         let listen_listener = TcpListener::bind(&listen_bind_addr).await?;
 
-        let req_bind_addr = format!("127.0.0.1:{}", self.public_port);
+        let req_bind_addr = format!("0.0.0.0:{}", self.public_port);
         let req_listener = TcpListener::bind(&req_bind_addr).await?;
 
         let clients = std::sync::Arc::new(ClientManager::new());
+
+        println!("Listening for clients on: {}", listen_bind_addr);
+        println!("Listening for requests on: {}", req_bind_addr);
 
         // Task to async accept new clients
         tokio::task::spawn(Server::accept_clients(
