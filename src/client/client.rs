@@ -7,6 +7,8 @@ use rand::RngCore;
 use rsa::{BigUint, PaddingScheme, PublicKey, RSAPublicKey};
 use tokio::net::TcpStream;
 
+use log::{debug, error, info};
+
 pub struct Client {
     listen_port: u32,
     ip: String,
@@ -121,7 +123,7 @@ impl Client {
                 Ok(_) => {
                     let h = MessageHeader::deserialize(head_buf);
                     if h.is_none() {
-                        println!("Deserializing Header: {:?}", head_buf);
+                        error!("Deserializing Header: {:?}", head_buf);
                         continue;
                     }
                     h.unwrap()
@@ -130,7 +132,7 @@ impl Client {
                     continue;
                 }
                 Err(e) => {
-                    println!("[Error][Server] Reading from Req: {}", e);
+                    error!("[Server] Reading from Req: {}", e);
                     continue;
                 }
             };
@@ -143,7 +145,7 @@ impl Client {
                 Ok(0) => continue,
                 Ok(n) => {
                     if n != data_length {
-                        println!(
+                        debug!(
                             "Read bytes doesnt match body length: {} != {}",
                             n, data_length
                         );
@@ -170,7 +172,7 @@ impl Client {
                     continue;
                 }
                 Err(e) => {
-                    println!("[Error][Server] Reading from Req: {}", e);
+                    error!("[Server] Reading from Req: {}", e);
                     continue;
                 }
             };
@@ -282,7 +284,7 @@ impl Client {
 
     pub async fn heartbeat(con: std::sync::Arc<Connection>, wait_time: std::time::Duration) {
         loop {
-            println!("Sending Heartbeat");
+            debug!("Sending Heartbeat");
 
             let msg_header = MessageHeader::new(0, MessageType::Heartbeat, 0);
             let msg = Message::new(msg_header, Vec::new());
@@ -293,7 +295,7 @@ impl Client {
                     continue;
                 }
                 Err(e) => {
-                    println!("Sending Heartbeat: {}", e);
+                    error!("Sending Heartbeat: {}", e);
                     return;
                 }
             };
@@ -303,7 +305,7 @@ impl Client {
     }
 
     pub async fn start(&self) -> Result<(), Error> {
-        println!("Starting...");
+        info!("Starting...");
 
         let bind_ip = format!("{}:{}", self.ip, self.listen_port);
 
@@ -316,7 +318,7 @@ impl Client {
         let wait_base: u64 = 2;
 
         loop {
-            println!("Conneting to server: {}", bind_ip);
+            info!("Conneting to server: {}", bind_ip);
 
             let connection_arc = match Client::establish_connection(&bind_ip, &self.key).await {
                 Some(c) => c,
@@ -328,7 +330,7 @@ impl Client {
                             rand::rngs::ThreadRng::default().next_u64() % 1000,
                         ))
                         .unwrap();
-                    println!(
+                    info!(
                         "Waiting {:?} before trying to connect again",
                         final_wait_time
                     );
@@ -338,7 +340,7 @@ impl Client {
                 }
             };
 
-            println!("Connected to server");
+            info!("Connected to server");
 
             attempts = 0;
 
@@ -350,7 +352,7 @@ impl Client {
             if let Err(e) =
                 Client::handle_connection(connection_arc, outgoing.clone(), pool.clone()).await
             {
-                println!("{}", e);
+                error!("{}", e);
             }
         }
     }

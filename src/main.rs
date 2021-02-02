@@ -2,6 +2,8 @@ use std::io::prelude::*;
 use structopt::StructOpt;
 use tunneler::*;
 
+use log::{error, info};
+
 #[derive(Debug)]
 enum Command {
     Server,
@@ -21,6 +23,8 @@ fn parse_command(cmd: &str) -> Option<Command> {
 }
 
 fn main() {
+    env_logger::init();
+
     let mut arguments = Arguments::from_args();
 
     if arguments.key_path.is_none() {
@@ -32,15 +36,15 @@ fn main() {
 
     let command = parse_command(&arguments.command);
     if command.is_none() {
-        println!("Invalid command: '{}'", arguments.command);
+        error!("Invalid command: '{}'", arguments.command);
         std::process::exit(-1);
     }
 
     let core_count = num_cpus::get();
-    println!("Cores: {}", core_count);
+    info!("Cores: {}", core_count);
 
     let threads = std::cmp::max(2, core_count);
-    println!("Threads: {}", threads);
+    info!("Threads: {}", threads);
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(threads)
@@ -59,7 +63,7 @@ fn main() {
                 .unwrap();
         }
         Command::GenerateKey => {
-            println!("Generating Server-Key");
+            info!("Generating Server-Key");
             let raw_key = general::generate_key(64);
             let key = base64::encode(raw_key);
 
@@ -72,7 +76,7 @@ fn main() {
             key_file
                 .write_all(key.as_bytes())
                 .expect("Could not write to key-file");
-            println!("Wrote Key to file: {}", raw_path);
+            info!("Wrote Key to file: {}", raw_path);
         }
     };
 }

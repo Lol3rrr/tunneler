@@ -2,6 +2,8 @@ use crate::server::client::ClientManager;
 use crate::{Connection, Connections};
 use crate::{Message, MessageHeader, MessageType};
 
+use log::{debug, error};
+
 #[derive(Clone)]
 pub struct Client {
     id: u32,
@@ -57,13 +59,15 @@ impl Client {
             };
 
             if let MessageType::Heartbeat = header.get_kind() {
-                println!("[{}] Received Heartbeat", self.id);
+                debug!("[{}] Received Heartbeat", self.id);
                 continue;
             }
 
             let data_length = header.get_length() as usize;
             let mut to_read = data_length;
             while to_read > 0 {
+                debug!("[{}] {} Bytes left to read", self.get_id(), to_read);
+
                 let mut read_buf = vec![0; to_read];
                 match self.con.read(&mut read_buf).await {
                     Ok(0) => {
@@ -76,7 +80,11 @@ impl Client {
                         let user_con = match self.user_cons.get(header.get_id()) {
                             Some(s) => s,
                             None => {
-                                println!("No client found with ID: {}", header.get_id());
+                                error!(
+                                    "[{}] No connection found with ID: {}",
+                                    self.get_id(),
+                                    header.get_id()
+                                );
                                 continue;
                             }
                         };
@@ -86,13 +94,14 @@ impl Client {
                                 match user_con.write(&read_buf[0..n]).await {
                                     Ok(_) => {}
                                     Err(e) => {
-                                        println!("Forwarding: {}", e);
+                                        error!("[{}] Forwarding {}", self.get_id(), e);
                                     }
                                 };
                             }
                             _ => {
-                                println!(
-                                    "[{}] Unknown operation: {:?}",
+                                error!(
+                                    "[{}][{}] Unexpected Operation: {:?}",
+                                    self.get_id(),
                                     header.get_id(),
                                     header.get_kind()
                                 );
@@ -103,7 +112,7 @@ impl Client {
                         continue;
                     }
                     Err(e) => {
-                        println!("Reading client: {}", e);
+                        error!("[{}] Reading client: {}", self.get_id(), e);
                         return;
                     }
                 }
@@ -119,13 +128,13 @@ impl Client {
         match client.con.write(&close_msg.serialize()).await {
             Ok(_) => {}
             Err(e) => {
-                println!("Sending Close Message: {}", e);
+                error!("[{}][{}] Sending Close Message: {}", client.get_id(), id, e);
             }
         };
     }
 
     fn close(&self) {
-        println!("Closing Client-Connection");
+        debug!("[{}] Closing Connection", self.get_id());
         self.client_manager.remove_con(self.get_id());
     }
 
