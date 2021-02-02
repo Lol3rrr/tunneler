@@ -78,6 +78,7 @@ impl Client {
                 }
             };
 
+            // Forwarding the message to the actual user
             let user_con = match self.user_cons.get(header.get_id()) {
                 Some(s) => s,
                 None => {

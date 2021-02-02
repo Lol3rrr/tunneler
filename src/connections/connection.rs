@@ -48,6 +48,36 @@ impl Connection {
         self.stream.try_write(buf)
     }
 
+    async fn write_with_retry(
+        &self,
+        data: &[u8],
+        length: usize,
+        out: std::sync::Arc<Self>,
+    ) -> std::io::Result<()> {
+        let mut offset = 0;
+        let mut left_to_send = length;
+
+        while left_to_send > 0 {
+            match out.write(&data[offset..offset + left_to_send]).await {
+                Ok(0) => {
+                    return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+                }
+                Ok(n) => {
+                    offset += n;
+                    left_to_send -= n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+        }
+
+        Ok(())
+    }
+
     /// This method reads the Data from connection and simply forwards it in the same chunks
     async fn unbuffered_forward(
         &self,
@@ -75,7 +105,7 @@ impl Connection {
                     left_to_read -= n;
                     debug!("[{}] Read {} Bytes", header.get_id(), n);
 
-                    match out.write(&read_buf).await {
+                    match self.write_with_retry(&read_buf, n, out.clone()).await {
                         Ok(_) => {}
                         Err(e) => {
                             return Err(e);
@@ -140,7 +170,10 @@ impl Connection {
 
         debug!("[{}] Done buffering message", header.get_id());
 
-        match out.write(&message_buffer).await {
+        match self
+            .write_with_retry(&message_buffer, total_length, out)
+            .await
+        {
             Ok(_) => {}
             Err(e) => {
                 return Err(e);
