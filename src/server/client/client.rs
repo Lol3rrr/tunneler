@@ -10,6 +10,7 @@ pub struct Client {
     con: std::sync::Arc<Connection>,
     user_cons: std::sync::Arc<Connections<Connection>>,
     client_manager: std::sync::Arc<ClientManager>,
+    send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
 }
 
 impl Client {
@@ -17,6 +18,7 @@ impl Client {
         id: u32,
         con: std::sync::Arc<Connection>,
         client_manager: std::sync::Arc<ClientManager>,
+        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
     ) -> Client {
         let connections: std::sync::Arc<Connections<Connection>> =
             std::sync::Arc::new(Connections::new());
@@ -26,6 +28,7 @@ impl Client {
             con,
             user_cons: connections,
             client_manager,
+            send_queue,
         }
     }
 
@@ -109,8 +112,8 @@ impl Client {
         client.user_cons.remove(id);
 
         let header = MessageHeader::new(id, MessageType::Close, 0);
-        let close_msg = Message::new(header, vec![0]);
-        match client.con.write(&close_msg.serialize()).await {
+        let msg = Message::new(header, vec![0]);
+        match client.send_queue.send(msg) {
             Ok(_) => {}
             Err(e) => {
                 error!("[{}][{}] Sending Close Message: {}", client.get_id(), id, e);
@@ -121,6 +124,44 @@ impl Client {
     fn close(&self) {
         debug!("[{}] Closing Connection", self.get_id());
         self.client_manager.remove_con(self.get_id());
+    }
+
+    pub async fn sender(self, mut queue: tokio::sync::mpsc::UnboundedReceiver<Message>) {
+        loop {
+            let msg = match queue.recv().await {
+                Some(m) => m,
+                None => {
+                    error!("[{}][Sender] Receiving Message from Queue", self.get_id());
+                    return;
+                }
+            };
+
+            let data = msg.serialize();
+            let total_data_length = data.len();
+            let mut left_to_send = total_data_length;
+            let mut offset: usize = 0;
+            while left_to_send > 0 {
+                match self.con.write(&data[offset..offset + left_to_send]).await {
+                    Ok(0) => {
+                        error!("[{}][Sender] Wrote 0 bytes", self.get_id());
+                        return;
+                    }
+                    Ok(n) => {
+                        offset += n;
+                        left_to_send -= n;
+
+                        debug!("[{}][Sender] Send {} out bytes", self.get_id(), n);
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("[{}][Sender] Sending Message: {}", self.get_id(), e);
+                        return;
+                    }
+                };
+            }
+        }
     }
 
     /// Process a new user connection
@@ -146,13 +187,16 @@ impl Client {
                     let header = MessageHeader::new(id, MessageType::Data, n as u64);
                     let msg = Message::new(header, buf);
 
-                    // Send the custom message over the client connection to the client
-                    match client.con.write(&msg.serialize()).await {
+                    // Puts the message in the queue to be send to the client
+                    match client.send_queue.send(msg) {
                         Ok(_) => {}
                         Err(e) => {
-                            error!("[{}][{}]Sending: {}", client.get_id(), id, e);
-                            client.close();
-                            return;
+                            error!(
+                                "[{}][{}] Forwarding message to client: {}",
+                                client.get_id(),
+                                id,
+                                e
+                            );
                         }
                     };
                 }

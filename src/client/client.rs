@@ -330,8 +330,6 @@ impl Client {
                 }
             };
 
-            debug!("[Sender] Got next message to send");
-
             let data = msg.serialize();
             let total_data_length = data.len();
             let mut left_to_send = total_data_length;
@@ -357,8 +355,6 @@ impl Client {
                     }
                 }
             }
-
-            debug!("[Sender] Successfully send the message");
         }
     }
 

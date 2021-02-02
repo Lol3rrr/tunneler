@@ -142,7 +142,10 @@ impl Server {
             println!("Accepted client");
 
             let c_id: u32 = rand::thread_rng().gen();
-            let client_con = Client::new(c_id, client, clients.clone());
+            let (queue_tx, queue_rx) = tokio::sync::mpsc::unbounded_channel();
+
+            let client_con = Client::new(c_id, client, clients.clone(), queue_tx);
+            tokio::task::spawn(Client::sender(client_con.clone(), queue_rx));
             tokio::task::spawn(client_con.clone().read_respond());
 
             clients.add(client_con);
