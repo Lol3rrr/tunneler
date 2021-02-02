@@ -36,6 +36,30 @@ impl Client {
         self.id
     }
 
+    async fn drain(&self, length: u64) {
+        let mut left_to_drain = length;
+
+        while left_to_drain > 0 {
+            let mut drain_data = vec![0; left_to_drain];
+
+            match self.con.read(&mut drain_data).await {
+                Ok(0) => {
+                    return;
+                }
+                Ok(n) => {
+                    left_to_drain -= n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    error!("[{}] Draining connection: {}", self.get_id(), e);
+                    continue;
+                }
+            };
+        }
+    }
+
     pub async fn read_respond(self) {
         loop {
             let mut head_buf = [0; 13];
@@ -75,6 +99,7 @@ impl Client {
                         header.get_id(),
                         header.get_kind()
                     );
+                    self.drain(header.get_length()).await;
                 }
             };
 
@@ -91,6 +116,7 @@ impl Client {
                     // This also then needs to drain the next data that belongs to
                     // this incorrect request as this otherwise it will bring
                     // everyting else out of order as well
+                    self.drain(header.get_length()).await;
                     continue;
                 }
             };
