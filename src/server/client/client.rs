@@ -63,60 +63,45 @@ impl Client {
                 continue;
             }
 
-            let data_length = header.get_length() as usize;
-            let mut to_read = data_length;
-            while to_read > 0 {
-                debug!("[{}] {} Bytes left to read", self.get_id(), to_read);
-
-                let mut read_buf = vec![0; to_read];
-                match self.con.read(&mut read_buf).await {
-                    Ok(0) => {
-                        self.close();
-                        return;
-                    }
-                    Ok(n) => {
-                        to_read -= n;
-
-                        let user_con = match self.user_cons.get(header.get_id()) {
-                            Some(s) => s,
-                            None => {
-                                error!(
-                                    "[{}] No connection found with ID: {}",
-                                    self.get_id(),
-                                    header.get_id()
-                                );
-                                continue;
-                            }
-                        };
-
-                        match header.get_kind() {
-                            MessageType::Data => {
-                                match user_con.write(&read_buf[0..n]).await {
-                                    Ok(_) => {}
-                                    Err(e) => {
-                                        error!("[{}] Forwarding {}", self.get_id(), e);
-                                    }
-                                };
-                            }
-                            _ => {
-                                error!(
-                                    "[{}][{}] Unexpected Operation: {:?}",
-                                    self.get_id(),
-                                    header.get_id(),
-                                    header.get_kind()
-                                );
-                            }
-                        };
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(e) => {
-                        error!("[{}] Reading client: {}", self.get_id(), e);
-                        return;
-                    }
+            match header.get_kind() {
+                MessageType::Data => {}
+                _ => {
+                    error!(
+                        "[{}][{}] Unexpected Operation: {:?}",
+                        self.get_id(),
+                        header.get_id(),
+                        header.get_kind()
+                    );
                 }
-            }
+            };
+
+            let user_con = match self.user_cons.get(header.get_id()) {
+                Some(s) => s,
+                None => {
+                    error!(
+                        "[{}] No Connection found with ID: {}",
+                        self.get_id(),
+                        header.get_id()
+                    );
+                    // TODO
+                    // This also then needs to drain the next data that belongs to
+                    // this incorrect request as this otherwise it will bring
+                    // everyting else out of order as well
+                    continue;
+                }
+            };
+
+            match self.con.forward_to_connection(&header, user_con).await {
+                Ok(_) => {}
+                Err(e) => {
+                    println!(
+                        "[{}][{}] Forwarding to User-Con: {}",
+                        self.get_id(),
+                        header.get_id(),
+                        e
+                    );
+                }
+            };
         }
     }
 

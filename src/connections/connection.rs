@@ -1,4 +1,8 @@
+use crate::MessageHeader;
+
 use tokio::net::TcpStream;
+
+use log::debug;
 
 pub struct Connection {
     stream: TcpStream,
@@ -42,5 +46,47 @@ impl Connection {
         };
 
         self.stream.try_write(buf)
+    }
+
+    pub async fn forward_to_connection(
+        &self,
+        header: &MessageHeader,
+        out: std::sync::Arc<Self>,
+    ) -> std::io::Result<()> {
+        let total_length = header.get_length() as usize;
+        let mut left_to_read = total_length;
+
+        while left_to_read > 0 {
+            debug!(
+                "{} Bytes out of {} left to read",
+                left_to_read, total_length
+            );
+
+            let mut read_buf = vec![0; left_to_read];
+            match self.read(&mut read_buf).await {
+                Ok(0) => {
+                    return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+                }
+                Ok(n) => {
+                    left_to_read -= n;
+                    debug!("Read {} Bytes", n);
+
+                    match out.write(&read_buf).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            return Err(e);
+                        }
+                    };
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+        }
+
+        return Ok(());
     }
 }
