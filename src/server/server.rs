@@ -129,13 +129,13 @@ impl Server {
             let client = match listen.accept().await {
                 Ok((socket, _)) => std::sync::Arc::new(Connection::new(socket)),
                 Err(e) => {
-                    println!("Accepting client-connection: {}", e);
+                    error!("Accepting client-connection: {}", e);
                     continue;
                 }
             };
 
             if !Server::validate_connection(client.clone(), &key).await {
-                println!("Rejected Client");
+                error!("Rejected Client");
                 continue;
             }
 
