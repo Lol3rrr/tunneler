@@ -44,7 +44,7 @@ impl Client {
                 Ok(_) => {
                     let h = MessageHeader::deserialize(head_buf);
                     if h.is_none() {
-                        println!("Deserializing Header: {:?}", head_buf);
+                        error!("[{}] Deserializing Header: {:?}", self.get_id(), head_buf);
                         continue;
                     }
                     h.unwrap()
@@ -53,7 +53,7 @@ impl Client {
                     continue;
                 }
                 Err(e) => {
-                    println!("[Error][Server] Reading from Req: {}", e);
+                    error!("[{}] Reading from Client-Connection: {}", self.get_id(), e);
                     continue;
                 }
             };
@@ -94,8 +94,8 @@ impl Client {
             match self.con.forward_to_connection(&header, user_con).await {
                 Ok(_) => {}
                 Err(e) => {
-                    println!(
-                        "[{}][{}] Forwarding to User-Con: {}",
+                    error!(
+                        "[{}][{}] Forwarding to User-Connection: {}",
                         self.get_id(),
                         header.get_id(),
                         e
@@ -150,7 +150,7 @@ impl Client {
                     match client.con.write(&msg.serialize()).await {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("Sending: {}", e);
+                            error!("[{}][{}]Sending: {}", client.get_id(), id, e);
                             client.close();
                             return;
                         }
@@ -160,8 +160,7 @@ impl Client {
                     continue;
                 }
                 Err(e) => {
-                    println!("Reading from Req: {}", e);
-                    println!("{:?}", e.kind());
+                    error!("[{}][{}] Reading from User-Con: {}", client.get_id(), id, e);
                     if e.kind() == std::io::ErrorKind::ConnectionReset {
                         tokio::task::spawn(Client::close_user_connection(client, id));
                     }
