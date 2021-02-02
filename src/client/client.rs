@@ -146,7 +146,7 @@ impl Client {
                 MessageType::Data => {}
                 _ => {
                     debug!(
-                        "[Server][{}] Unknown Operation: {}",
+                        "[Server][{}] Unknown Operation: {:?}",
                         header.get_id(),
                         header.get_kind()
                     );
