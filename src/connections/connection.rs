@@ -103,7 +103,7 @@ impl Connection {
         out: std::sync::Arc<Self>,
     ) -> std::io::Result<()> {
         let total_length = header.get_length() as usize;
-        let mut message_buffer = Vec::with_capacity(total_length);
+        let mut message_buffer = vec![0; total_length];
 
         let mut offset = 0;
         let mut left_to_read = total_length;
