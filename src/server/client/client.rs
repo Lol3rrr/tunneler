@@ -136,11 +136,20 @@ impl Client {
                 }
             };
 
+            debug!("[{}][Sender] Got message to send", self.get_id());
+
             let data = msg.serialize();
             let total_data_length = data.len();
             let mut left_to_send = total_data_length;
             let mut offset: usize = 0;
             while left_to_send > 0 {
+                debug!(
+                    "[{}][Sender] {} out of {} bytes left",
+                    self.get_id(),
+                    left_to_send,
+                    total_data_length
+                );
+
                 match self.con.write(&data[offset..offset + left_to_send]).await {
                     Ok(0) => {
                         error!("[{}][Sender] Wrote 0 bytes", self.get_id());
