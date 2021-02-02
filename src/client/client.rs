@@ -137,6 +137,23 @@ impl Client {
                 }
             };
 
+            match header.get_kind() {
+                MessageType::Close => {
+                    debug!("[Server] Close Connection: {}", header.get_id());
+                    Client::close_user_connection(header.get_id(), &outgoing);
+                    continue;
+                }
+                MessageType::Data => {}
+                _ => {
+                    debug!(
+                        "[Server][{}] Unknown Operation: {}",
+                        header.get_id(),
+                        header.get_kind()
+                    );
+                    continue;
+                }
+            };
+
             let data_length = header.get_length() as usize;
             let mut buf = vec![0; data_length];
             // Try to read data, this may still fail with `WouldBlock`
@@ -151,22 +168,13 @@ impl Client {
                         );
                     }
 
-                    match header.get_kind() {
-                        MessageType::Close => {
-                            println!("[Server] Closed connection");
-                            Client::close_user_connection(header.get_id(), &outgoing);
-                        }
-                        MessageType::Data => {
-                            let msg = Message::new(header, buf);
-                            tokio::task::spawn(Client::read_forward(
-                                server_con.clone(),
-                                outgoing.clone(),
-                                con_pool.clone(),
-                                msg,
-                            ));
-                        }
-                        _ => {}
-                    };
+                    let msg = Message::new(header, buf);
+                    tokio::task::spawn(Client::read_forward(
+                        server_con.clone(),
+                        outgoing.clone(),
+                        con_pool.clone(),
+                        msg,
+                    ));
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
