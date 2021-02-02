@@ -37,7 +37,7 @@ impl Client {
 
     async fn respond(
         id: u32,
-        server_con: std::sync::Arc<Connection>,
+        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
         proxied_con: std::sync::Arc<Connection>,
         users: std::sync::Arc<Connections<Connection>>,
     ) {
@@ -53,10 +53,10 @@ impl Client {
                 Ok(n) => {
                     let header = MessageHeader::new(id, MessageType::Data, n as u64);
                     let msg = Message::new(header, buf);
-                    match server_con.write(&msg.serialize()).await {
+                    match send_queue.send(msg) {
                         Ok(_) => {}
                         Err(e) => {
-                            println!("[{}][Server] Error relaying: {}", id, e);
+                            error!("[{}][Server] Forwarding Data: {}", id, e);
                         }
                     };
                 }
@@ -84,7 +84,7 @@ impl Client {
     }
 
     async fn read_forward(
-        server_con: std::sync::Arc<Connection>,
+        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
         outgoing: std::sync::Arc<Connections<Connection>>,
         con_pool: std::sync::Arc<Pool>,
         msg: Message,
@@ -97,7 +97,7 @@ impl Client {
                 outgoing.set(id, result.clone());
                 tokio::task::spawn(Client::respond(
                     id,
-                    server_con,
+                    send_queue,
                     result.clone(),
                     outgoing.clone(),
                 ));
@@ -116,6 +116,7 @@ impl Client {
 
     async fn handle_connection(
         server_con: std::sync::Arc<Connection>,
+        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
         outgoing: std::sync::Arc<Connections<Connection>>,
         con_pool: std::sync::Arc<Pool>,
     ) -> Result<(), Error> {
@@ -173,7 +174,7 @@ impl Client {
 
                     let msg = Message::new(header, buf);
                     tokio::task::spawn(Client::read_forward(
-                        server_con.clone(),
+                        send_queue.clone(),
                         outgoing.clone(),
                         con_pool.clone(),
                         msg,
@@ -293,25 +294,71 @@ impl Client {
         Some(connection_arc)
     }
 
-    pub async fn heartbeat(con: std::sync::Arc<Connection>, wait_time: std::time::Duration) {
+    pub async fn heartbeat(
+        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
+        wait_time: std::time::Duration,
+    ) {
         loop {
             debug!("Sending Heartbeat");
 
             let msg_header = MessageHeader::new(0, MessageType::Heartbeat, 0);
             let msg = Message::new(msg_header, Vec::new());
 
-            match con.write(&msg.serialize()).await {
-                Ok(_) => {}
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
+            match send_queue.send(msg) {
+                Ok(_) => {
+                    debug!("Successfully send Heartbeat");
                 }
                 Err(e) => {
-                    error!("Sending Heartbeat: {}", e);
-                    return;
+                    error!("[Heartbeat] Sending: {}", e);
                 }
             };
 
             tokio::time::sleep(wait_time).await;
+        }
+    }
+
+    async fn sender(
+        server_con: std::sync::Arc<Connection>,
+        mut queue: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    ) {
+        loop {
+            let msg = match queue.recv().await {
+                Some(m) => m,
+                None => {
+                    info!("[Sender] All Queue-Senders have been closed");
+                    return;
+                }
+            };
+
+            debug!("[Sender] Got next message to send");
+
+            let data = msg.serialize();
+            let total_data_length = data.len();
+            let mut left_to_send = total_data_length;
+            let mut offset = 0;
+            while left_to_send > 0 {
+                match server_con.write(&data[offset..offset + left_to_send]).await {
+                    Ok(0) => {
+                        error!("[Sender] Wrote 0 bytes");
+                        return;
+                    }
+                    Ok(n) => {
+                        offset += n;
+                        left_to_send -= n;
+
+                        debug!("[Sender] Send {} out bytes", n);
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        continue;
+                    }
+                    Err(e) => {
+                        error!("Sending Message: {}", e);
+                        return;
+                    }
+                }
+            }
+
+            debug!("[Sender] Successfully send the message");
         }
     }
 
@@ -355,13 +402,18 @@ impl Client {
 
             attempts = 0;
 
+            let (queue_tx, queue_rx) = tokio::sync::mpsc::unbounded_channel();
+
+            tokio::task::spawn(Client::sender(connection_arc.clone(), queue_rx));
+
             tokio::task::spawn(Client::heartbeat(
-                connection_arc.clone(),
+                queue_tx.clone(),
                 std::time::Duration::from_secs(15),
             ));
 
             if let Err(e) =
-                Client::handle_connection(connection_arc, outgoing.clone(), pool.clone()).await
+                Client::handle_connection(connection_arc, queue_tx, outgoing.clone(), pool.clone())
+                    .await
             {
                 error!("{}", e);
             }
