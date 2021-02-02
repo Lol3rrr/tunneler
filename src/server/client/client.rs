@@ -37,7 +37,7 @@ impl Client {
     }
 
     async fn drain(&self, length: u64) {
-        let mut left_to_drain = length;
+        let mut left_to_drain = length as usize;
 
         while left_to_drain > 0 {
             let mut drain_data = vec![0; left_to_drain];
