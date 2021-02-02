@@ -12,7 +12,6 @@ tokio = { version = "1.1.0", features = ["rt", "net", "rt-multi-thread", "io-uti
 rand = { version = "0.7.0", features = ["getrandom"] }
 num_cpus = "1.13.0"
 dashmap = { version = "4.0.2" }
-mobc = { version = "0.7.0" }
 rsa = { version = "0.3.0" }
 dirs = { version = "3.0.1" }
 base64 = { version = "0.13.0" }

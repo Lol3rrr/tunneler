@@ -1,5 +1,6 @@
 use crate::Arguments;
-use crate::{Connection, ConnectionManager, Connections};
+use crate::Pool;
+use crate::{Connection, Connections};
 use crate::{Error, Message, MessageHeader, MessageType};
 
 use rand::RngCore;
@@ -35,8 +36,8 @@ impl Client {
     async fn respond(
         id: u32,
         server_con: std::sync::Arc<Connection>,
-        proxied_con: std::sync::Arc<mobc::Connection<ConnectionManager>>,
-        users: std::sync::Arc<Connections<mobc::Connection<ConnectionManager>>>,
+        proxied_con: std::sync::Arc<Connection>,
+        users: std::sync::Arc<Connections<Connection>>,
     ) {
         loop {
             let mut buf = vec![0; 4092];
@@ -68,7 +69,7 @@ impl Client {
         }
     }
 
-    fn close_user_connection(id: u32, users: &Connections<mobc::Connection<ConnectionManager>>) {
+    fn close_user_connection(id: u32, users: &Connections<Connection>) {
         users.get(id).unwrap().close();
         if users.remove(id) {
             println!("[{}] Closed connection", id);
@@ -79,24 +80,23 @@ impl Client {
 
     async fn read_forward(
         server_con: std::sync::Arc<Connection>,
-        outgoing: std::sync::Arc<Connections<mobc::Connection<ConnectionManager>>>,
-        con_pool: mobc::Pool<ConnectionManager>,
+        outgoing: std::sync::Arc<Connections<Connection>>,
+        con_pool: std::sync::Arc<Pool>,
         msg: Message,
     ) {
         let header = msg.get_header();
         let id = header.get_id();
         let out_con = match outgoing.get(id) {
             None => {
-                let result = con_pool.get().await.unwrap();
-                let result_arc = std::sync::Arc::new(result);
-                outgoing.set(id, result_arc.clone());
+                let result = con_pool.get_con().await.unwrap();
+                outgoing.set(id, result.clone());
                 tokio::task::spawn(Client::respond(
                     id,
                     server_con,
-                    result_arc.clone(),
+                    result.clone(),
                     outgoing.clone(),
                 ));
-                result_arc
+                result
             }
             Some(s) => s.clone(),
         };
@@ -111,8 +111,8 @@ impl Client {
 
     async fn handle_connection(
         server_con: std::sync::Arc<Connection>,
-        outgoing: std::sync::Arc<Connections<mobc::Connection<ConnectionManager>>>,
-        con_pool: mobc::Pool<ConnectionManager>,
+        outgoing: std::sync::Arc<Connections<Connection>>,
+        con_pool: std::sync::Arc<Pool>,
     ) -> Result<(), Error> {
         loop {
             let mut head_buf = [0; 13];
@@ -307,13 +307,9 @@ impl Client {
 
         let bind_ip = format!("{}:{}", self.ip, self.listen_port);
 
-        let manager = ConnectionManager::new(&self.out_ip, self.out_port);
-        let pool = mobc::Pool::builder()
-            .max_open(25)
-            .max_idle(10)
-            .build(manager);
+        let pool = std::sync::Arc::new(Pool::new(format!("{}:{}", self.out_ip, self.out_port)));
 
-        let outgoing: std::sync::Arc<Connections<mobc::Connection<ConnectionManager>>> =
+        let outgoing: std::sync::Arc<Connections<Connection>> =
             std::sync::Arc::new(Connections::new());
 
         let mut attempts = 0;
