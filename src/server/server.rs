@@ -139,7 +139,7 @@ impl Server {
                 continue;
             }
 
-            println!("Accepted client");
+            info!("Accepted client");
 
             let c_id: u32 = rand::thread_rng().gen();
             let (queue_tx, queue_rx) = tokio::sync::mpsc::unbounded_channel();
