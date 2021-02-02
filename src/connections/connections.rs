@@ -28,7 +28,7 @@ impl<T> Connections<T> {
         self.connections.insert(id, con);
     }
 
-    pub fn remove(&self, id: u32) -> bool {
-        self.connections.remove(&id).is_some()
+    pub fn remove(&self, id: u32) -> Option<(u32, std::sync::Arc<T>)> {
+        self.connections.remove(&id)
     }
 }

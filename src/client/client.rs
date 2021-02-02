@@ -72,12 +72,15 @@ impl Client {
     }
 
     fn close_user_connection(id: u32, users: &Connections<Connection>) {
-        users.get(id).unwrap().close();
-        if users.remove(id) {
-            println!("[{}] Closed connection", id);
-        } else {
-            println!("[{}] Connection to close not found", id);
-        }
+        match users.remove(id) {
+            Some(s) => {
+                s.1.close();
+                error!("[{}] Closed connection", id);
+            }
+            None => {
+                error!("[{}] Connection to close not found", id);
+            }
+        };
     }
 
     async fn read_forward(
