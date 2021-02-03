@@ -314,6 +314,7 @@ impl Client {
                 }
                 Err(e) => {
                     error!("[Heartbeat] Sending: {}", e);
+                    return;
                 }
             };
 

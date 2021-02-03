@@ -23,19 +23,7 @@ fn parse_command(cmd: &str) -> Option<Command> {
 }
 
 fn main() {
-    env_logger::Builder::new()
-        .format(|buf, record| {
-            writeln!(
-                buf,
-                "{}:{} {} [{}] - {}",
-                record.file().unwrap_or("unknown"),
-                record.line().unwrap_or(0),
-                chrono::Local::now().format("%dT%H:%M:%S"),
-                record.level(),
-                record.args()
-            )
-        })
-        .init();
+    env_logger::init();
 
     let mut arguments = Arguments::from_args();
 
