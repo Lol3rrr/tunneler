@@ -13,9 +13,11 @@ pub async fn respond(
         let mut buf = vec![0; 4092];
         match read_user_con.read(&mut buf).await {
             Ok(0) => {
-                users.remove(id);
+                debug!("[{}][Proxied] Read 0 Bytes", id);
+                debug!("[{}][Proxied] Closing connection");
+                //users.remove(id);
 
-                return;
+                //return;
             }
             Ok(n) => {
                 let header = MessageHeader::new(id, MessageType::Data, n as u64);
@@ -23,7 +25,7 @@ pub async fn respond(
                 match send_queue.send(msg) {
                     Ok(_) => {}
                     Err(e) => {
-                        error!("[{}][Server] Forwarding Data: {}", id, e);
+                        error!("[{}][Proxied] Adding Data to Server-Queue: {}", id, e);
                     }
                 };
             }
