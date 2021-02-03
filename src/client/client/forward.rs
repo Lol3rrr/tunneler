@@ -16,7 +16,12 @@ pub async fn forward(
             }
         };
 
-        let data = message.serialize();
+        let data = message.get_data();
+        debug!(
+            "[{}][Proxied] Sent {} Bytes",
+            message.get_header().get_id(),
+            data.len()
+        );
         match write_user_con.write_all(&data).await {
             Ok(_) => {}
             Err(e) => {
