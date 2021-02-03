@@ -59,7 +59,7 @@ impl Client {
                 }
                 Err(e) => {
                     error!("[{}] Reading from Client-Connection: {}", self.get_id(), e);
-                    continue;
+                    return;
                 }
             };
 
