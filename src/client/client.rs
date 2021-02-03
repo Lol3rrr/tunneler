@@ -7,6 +7,10 @@ use rand::RngCore;
 use rsa::{BigUint, PaddingScheme, PublicKey, RSAPublicKey};
 use tokio::net::TcpStream;
 
+mod close_user_connection;
+mod heartbeat;
+mod read_forward;
+
 use log::{debug, error, info};
 
 pub struct Client {
@@ -33,85 +37,6 @@ impl Client {
             out_port: cli.public_port.expect("Loading Public-Port"),
             key,
         })
-    }
-
-    async fn respond(
-        id: u32,
-        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-        proxied_con: std::sync::Arc<Connection>,
-        users: std::sync::Arc<Connections<Connection>>,
-    ) {
-        loop {
-            let mut buf = vec![0; 4092];
-            match proxied_con.read(&mut buf).await {
-                Ok(0) => {
-                    proxied_con.close();
-                    users.remove(id);
-
-                    return;
-                }
-                Ok(n) => {
-                    let header = MessageHeader::new(id, MessageType::Data, n as u64);
-                    let msg = Message::new(header, buf);
-                    match send_queue.send(msg) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!("[{}][Server] Forwarding Data: {}", id, e);
-                        }
-                    };
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                Err(e) => {
-                    println!("[{}][Proxied] Reading from proxied: {}", id, e);
-                    return;
-                }
-            };
-        }
-    }
-
-    fn close_user_connection(id: u32, users: &Connections<Connection>) {
-        match users.remove(id) {
-            Some(s) => {
-                s.1.close();
-                error!("[{}] Closed connection", id);
-            }
-            None => {
-                error!("[{}] Connection to close not found", id);
-            }
-        };
-    }
-
-    async fn read_forward(
-        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-        outgoing: std::sync::Arc<Connections<Connection>>,
-        con_pool: std::sync::Arc<Pool>,
-        msg: Message,
-    ) {
-        let header = msg.get_header();
-        let id = header.get_id();
-        let out_con = match outgoing.get(id) {
-            None => {
-                let result = con_pool.get_con().await.unwrap();
-                outgoing.set(id, result.clone());
-                tokio::task::spawn(Client::respond(
-                    id,
-                    send_queue,
-                    result.clone(),
-                    outgoing.clone(),
-                ));
-                result
-            }
-            Some(s) => s.clone(),
-        };
-
-        match out_con.write(msg.get_data()).await {
-            Ok(_) => {}
-            Err(e) => {
-                println!("[Proxied] {}", e);
-            }
-        };
     }
 
     async fn handle_connection(
@@ -148,7 +73,7 @@ impl Client {
             match header.get_kind() {
                 MessageType::Close => {
                     debug!("[Server] Close Connection: {}", header.get_id());
-                    Client::close_user_connection(header.get_id(), &outgoing);
+                    close_user_connection::close_user_connection(header.get_id(), &outgoing);
                     continue;
                 }
                 MessageType::Data => {}
@@ -177,7 +102,7 @@ impl Client {
                     }
 
                     let msg = Message::new(header, buf);
-                    tokio::task::spawn(Client::read_forward(
+                    tokio::task::spawn(read_forward::read_forward(
                         send_queue.clone(),
                         outgoing.clone(),
                         con_pool.clone(),
@@ -302,24 +227,7 @@ impl Client {
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
         wait_time: std::time::Duration,
     ) {
-        loop {
-            debug!("Sending Heartbeat");
-
-            let msg_header = MessageHeader::new(0, MessageType::Heartbeat, 0);
-            let msg = Message::new(msg_header, Vec::new());
-
-            match send_queue.send(msg) {
-                Ok(_) => {
-                    debug!("Successfully send Heartbeat");
-                }
-                Err(e) => {
-                    error!("[Heartbeat] Sending: {}", e);
-                    return;
-                }
-            };
-
-            tokio::time::sleep(wait_time).await;
-        }
+        heartbeat::heartbeat(send_queue, wait_time).await;
     }
 
     async fn sender(
