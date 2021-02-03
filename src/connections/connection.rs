@@ -48,6 +48,30 @@ impl Connection {
         self.stream.try_write(buf)
     }
 
+    pub async fn drain(&self, size: usize) -> std::io::Result<()> {
+        let mut left_to_drain = size;
+
+        let mut buffer = vec![0; size];
+        while left_to_drain > 0 {
+            match self.read(&mut buffer[0..left_to_drain]).await {
+                Ok(0) => {
+                    return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+                }
+                Ok(n) => {
+                    left_to_drain -= n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+        }
+
+        Ok(())
+    }
+
     async fn write_with_retry(
         &self,
         data: &[u8],

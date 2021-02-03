@@ -123,7 +123,11 @@ impl Client {
         loop {
             let mut head_buf = [0; 13];
             let header = match server_con.read(&mut head_buf).await {
-                Ok(0) => continue,
+                Ok(0) => {
+                    return Err(Error::from(std::io::Error::from(
+                        std::io::ErrorKind::ConnectionReset,
+                    )));
+                }
                 Ok(_) => {
                     let h = MessageHeader::deserialize(head_buf);
                     if h.is_none() {
@@ -137,7 +141,7 @@ impl Client {
                 }
                 Err(e) => {
                     error!("[Server] Reading from Req: {}", e);
-                    continue;
+                    return Err(Error::from(e));
                 }
             };
 

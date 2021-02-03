@@ -37,27 +37,12 @@ impl Client {
     }
 
     async fn drain(&self, length: u64) {
-        let mut left_to_drain = length as usize;
-
-        while left_to_drain > 0 {
-            let mut drain_data = vec![0; left_to_drain];
-
-            match self.con.read(&mut drain_data).await {
-                Ok(0) => {
-                    return;
-                }
-                Ok(n) => {
-                    left_to_drain -= n;
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                Err(e) => {
-                    error!("[{}] Draining connection: {}", self.get_id(), e);
-                    continue;
-                }
-            };
-        }
+        match self.con.drain(length as usize).await {
+            Ok(_) => {}
+            Err(e) => {
+                error!("[{}] Draining Connection: {}", self.get_id(), e);
+            }
+        };
     }
 
     pub async fn read_respond(self) {
