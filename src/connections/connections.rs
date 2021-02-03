@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 
 pub struct Connections<T> {
-    connections: DashMap<u32, std::sync::Arc<T>>,
+    connections: DashMap<u32, T>,
 }
 
 impl<T> Default for Connections<T> {
@@ -17,18 +17,18 @@ impl<T> Connections<T> {
         }
     }
 
-    pub fn get(&self, id: u32) -> Option<std::sync::Arc<T>> {
+    pub fn get(&self, id: u32) -> Option<&T> {
         match self.connections.get(&id) {
             None => None,
-            Some(s) => Some(s.clone()),
+            Some(s) => Some(&s),
         }
     }
 
-    pub fn set(&self, id: u32, con: std::sync::Arc<T>) {
+    pub fn set(&self, id: u32, con: T) {
         self.connections.insert(id, con);
     }
 
-    pub fn remove(&self, id: u32) -> Option<(u32, std::sync::Arc<T>)> {
+    pub fn remove(&self, id: u32) -> Option<(u32, T)> {
         self.connections.remove(&id)
     }
 }

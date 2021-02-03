@@ -129,7 +129,7 @@ impl Client {
             };
 
             let con_queue = match client_cons.get(id) {
-                Some(send_queue) => send_queue,
+                Some(send_queue) => send_queue.clone(),
                 // In case there is no matching user-connection, create a new one
                 None => {
                     // Connects out to the server
@@ -138,9 +138,8 @@ impl Client {
 
                     // Setup the send channel for requests for this user
                     let (tx, rx) = tokio::sync::broadcast::channel(25);
-                    let user_con_send_arc = std::sync::Arc::new(tx);
                     // Add the Connection to the current map of user-connection
-                    client_cons.set(id, user_con_send_arc.clone());
+                    client_cons.set(id, tx.clone());
                     // Starting the receive and send tasks for this connection
                     tokio::task::spawn(respond::respond(
                         id,
@@ -149,7 +148,7 @@ impl Client {
                         client_cons.clone(),
                     ));
                     tokio::task::spawn(forward::forward(write_con, rx));
-                    user_con_send_arc
+                    tx
                 }
             };
 
