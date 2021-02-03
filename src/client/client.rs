@@ -28,7 +28,7 @@ impl Client {
         let key = base64::decode(raw_key).unwrap();
 
         let server_dest = Destination::new(
-            cli.server_ip.expect("Loading Server-Address").to_owned(),
+            cli.server_ip.expect("Loading Server-Address"),
             cli.listen_port.expect("Loading Server-Listening Port"),
         );
         let out_dest = Destination::new(cli.out_ip, cli.public_port.expect("Loading Public Port"));

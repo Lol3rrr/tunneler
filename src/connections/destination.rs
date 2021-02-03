@@ -1,5 +1,3 @@
-use crate::Connection;
-
 pub struct Destination {
     ip: String,
     port: u32,
@@ -23,11 +21,11 @@ impl Destination {
         Ok(stream)
     }
 
-    pub fn get_full_address<'a>(&'a self) -> &'a str {
+    pub fn get_full_address(&self) -> &str {
         &self.formatted
     }
 
-    pub fn get_ip<'a>(&'a self) -> &'a str {
+    pub fn get_ip(&self) -> &str {
         &self.ip
     }
     pub fn get_port(&self) -> u32 {
