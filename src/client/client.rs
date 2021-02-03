@@ -1,6 +1,5 @@
 use crate::Arguments;
-use crate::Pool;
-use crate::{Connection, Connections};
+use crate::{Connection, Connections, Destination};
 use crate::{Error, Message, MessageHeader, MessageType};
 
 use rand::RngCore;
@@ -14,10 +13,8 @@ mod read_forward;
 use log::{debug, error, info};
 
 pub struct Client {
-    listen_port: u32,
-    ip: String,
-    out_ip: String,
-    out_port: u32,
+    server_destination: Destination,
+    out_destination: Destination,
     key: Vec<u8>,
 }
 
@@ -30,11 +27,15 @@ impl Client {
         let raw_key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key File");
         let key = base64::decode(raw_key).unwrap();
 
+        let server_dest = Destination::new(
+            cli.server_ip.expect("Loading Server-Address").to_owned(),
+            cli.listen_port.expect("Loading Server-Listening Port"),
+        );
+        let out_dest = Destination::new(cli.out_ip, cli.public_port.expect("Loading Public Port"));
+
         Ok(Client {
-            listen_port: cli.listen_port.expect("Loading Listen-Port"),
-            ip: cli.server_ip.unwrap(),
-            out_ip: cli.out_ip,
-            out_port: cli.public_port.expect("Loading Public-Port"),
+            server_destination: server_dest,
+            out_destination: out_dest,
             key,
         })
     }
@@ -43,7 +44,7 @@ impl Client {
         server_con: std::sync::Arc<Connection>,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
         outgoing: std::sync::Arc<Connections<Connection>>,
-        con_pool: std::sync::Arc<Pool>,
+        out_dest: &Destination,
     ) -> Result<(), Error> {
         loop {
             let mut head_buf = [0; 13];
@@ -102,12 +103,8 @@ impl Client {
                     }
 
                     let msg = Message::new(header, buf);
-                    tokio::task::spawn(read_forward::read_forward(
-                        send_queue.clone(),
-                        outgoing.clone(),
-                        con_pool.clone(),
-                        msg,
-                    ));
+                    read_forward::read_forward(send_queue.clone(), outgoing.clone(), out_dest, msg)
+                        .await;
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
@@ -274,10 +271,6 @@ impl Client {
     pub async fn start(&self) -> Result<(), Error> {
         info!("Starting...");
 
-        let bind_ip = format!("{}:{}", self.ip, self.listen_port);
-
-        let pool = std::sync::Arc::new(Pool::new(format!("{}:{}", self.out_ip, self.out_port)));
-
         let outgoing: std::sync::Arc<Connections<Connection>> =
             std::sync::Arc::new(Connections::new());
 
@@ -285,9 +278,17 @@ impl Client {
         let wait_base: u64 = 2;
 
         loop {
-            info!("Conneting to server: {}", bind_ip);
+            info!(
+                "Conneting to server: {}",
+                self.server_destination.get_full_address()
+            );
 
-            let connection_arc = match Client::establish_connection(&bind_ip, &self.key).await {
+            let connection_arc = match Client::establish_connection(
+                &self.server_destination.get_full_address(),
+                &self.key,
+            )
+            .await
+            {
                 Some(c) => c,
                 None => {
                     attempts += 1;
@@ -320,9 +321,13 @@ impl Client {
                 std::time::Duration::from_secs(15),
             ));
 
-            if let Err(e) =
-                Client::handle_connection(connection_arc, queue_tx, outgoing.clone(), pool.clone())
-                    .await
+            if let Err(e) = Client::handle_connection(
+                connection_arc,
+                queue_tx,
+                outgoing.clone(),
+                &self.out_destination,
+            )
+            .await
             {
                 error!("{}", e);
             }

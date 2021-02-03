@@ -65,6 +65,20 @@ impl MessageHeader {
 }
 
 #[test]
+fn message_header_serialize_connect() {
+    let input = vec![13, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0];
+    assert_eq!(
+        &MessageHeader {
+            id: 13,
+            kind: MessageType::Connect,
+            length: 20,
+        }
+        .serialize(),
+        &input[0..13]
+    );
+}
+
+#[test]
 fn message_header_deserialize_connect() {
     let mut input = [0; 13];
     input[0] = 13;
