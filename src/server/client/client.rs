@@ -8,7 +8,7 @@ use log::{debug, error};
 pub struct Client {
     id: u32,
     con: std::sync::Arc<Connection>,
-    user_cons: std::sync::Arc<Connections<Connection>>,
+    user_cons: std::sync::Arc<Connections<std::sync::Arc<Connection>>>,
     client_manager: std::sync::Arc<ClientManager>,
     send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
 }
@@ -20,13 +20,10 @@ impl Client {
         client_manager: std::sync::Arc<ClientManager>,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
     ) -> Client {
-        let connections: std::sync::Arc<Connections<Connection>> =
-            std::sync::Arc::new(Connections::new());
-
         Client {
             id,
             con,
-            user_cons: connections,
+            user_cons: std::sync::Arc::new(Connections::new()),
             client_manager,
             send_queue,
         }
@@ -99,7 +96,11 @@ impl Client {
                 }
             };
 
-            match self.con.forward_to_connection(&header, user_con).await {
+            match self
+                .con
+                .forward_to_connection(&header, user_con.clone())
+                .await
+            {
                 Ok(_) => {}
                 Err(e) => {
                     error!(
