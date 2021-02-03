@@ -26,7 +26,7 @@ impl Connection {
         self.open.store(false, std::sync::atomic::Ordering::SeqCst)
     }
 
-    pub async fn read(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+    pub async fn read_raw(&self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self.stream.readable().await {
             Ok(_) => {}
             Err(e) => {
@@ -37,7 +37,7 @@ impl Connection {
         self.stream.try_read(buf)
     }
 
-    pub async fn write(&self, buf: &[u8]) -> std::io::Result<usize> {
+    pub async fn write_raw(&self, buf: &[u8]) -> std::io::Result<usize> {
         match self.stream.writable().await {
             Ok(_) => {}
             Err(e) => {
@@ -53,7 +53,7 @@ impl Connection {
 
         let mut buffer = vec![0; size];
         while left_to_drain > 0 {
-            match self.read(&mut buffer[0..left_to_drain]).await {
+            match self.read_raw(&mut buffer[0..left_to_drain]).await {
                 Ok(0) => {
                     return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
                 }
@@ -72,23 +72,46 @@ impl Connection {
         Ok(())
     }
 
-    async fn write_with_retry(
-        &self,
-        data: &[u8],
-        length: usize,
-        out: std::sync::Arc<Self>,
-    ) -> std::io::Result<()> {
+    pub async fn write_total(&self, data: &[u8], length: usize) -> std::io::Result<()> {
         let mut offset = 0;
         let mut left_to_send = length;
 
         while left_to_send > 0 {
-            match out.write(&data[offset..offset + left_to_send]).await {
+            match self.write_raw(&data[offset..offset + left_to_send]).await {
                 Ok(0) => {
                     return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
                 }
                 Ok(n) => {
                     offset += n;
                     left_to_send -= n;
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            };
+        }
+
+        Ok(())
+    }
+
+    pub async fn read_total(&self, data: &mut [u8], length: usize) -> std::io::Result<()> {
+        let mut offset = 0;
+        let mut left_to_read = length;
+
+        while left_to_read > 0 {
+            match self
+                .read_raw(&mut data[offset..offset + left_to_read])
+                .await
+            {
+                Ok(0) => {
+                    return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
+                }
+                Ok(n) => {
+                    offset += n;
+                    left_to_read -= n;
                 }
                 Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                     continue;
@@ -120,7 +143,7 @@ impl Connection {
             );
 
             let mut read_buf = vec![0; left_to_read];
-            match self.read(&mut read_buf).await {
+            match self.read_raw(&mut read_buf).await {
                 Ok(0) => {
                     error!("[{}] Read 0 Bytes", header.get_id());
                     return Err(std::io::Error::from(std::io::ErrorKind::ConnectionReset));
@@ -129,7 +152,7 @@ impl Connection {
                     left_to_read -= n;
                     debug!("[{}] Read {} Bytes", header.get_id(), n);
 
-                    match self.write_with_retry(&read_buf, n, out.clone()).await {
+                    match out.write_total(&read_buf, n).await {
                         Ok(_) => {}
                         Err(e) => {
                             return Err(e);
@@ -157,7 +180,7 @@ impl Connection {
         out: std::sync::Arc<Self>,
     ) -> std::io::Result<()> {
         let total_length = header.get_length() as usize;
-        let mut message_buffer = vec![0; total_length];
+        let mut message_buffer: Vec<u8> = vec![0; total_length];
 
         let mut offset = 0;
         let mut left_to_read = total_length;
@@ -171,7 +194,7 @@ impl Connection {
             );
 
             match self
-                .read(&mut message_buffer[offset..offset + left_to_read])
+                .read_raw(&mut message_buffer[offset..offset + left_to_read])
                 .await
             {
                 Ok(0) => {
@@ -194,10 +217,7 @@ impl Connection {
 
         debug!("[{}] Done buffering message", header.get_id());
 
-        match self
-            .write_with_retry(&message_buffer, total_length, out)
-            .await
-        {
+        match out.write_total(&message_buffer, total_length).await {
             Ok(_) => {}
             Err(e) => {
                 return Err(e);

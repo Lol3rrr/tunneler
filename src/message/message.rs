@@ -3,7 +3,7 @@ use crate::MessageHeader;
 #[cfg(test)]
 use crate::MessageType;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Message {
     header: MessageHeader,
     data: Vec<u8>, // X bytes

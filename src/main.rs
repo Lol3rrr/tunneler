@@ -59,8 +59,8 @@ fn main() {
             rt.block_on(server.start()).unwrap();
         }
         Command::Client => {
-            rt.block_on(Client::new_from_args(arguments).unwrap().start())
-                .unwrap();
+            let client = Client::new_from_args(arguments).unwrap();
+            rt.block_on(client.start()).unwrap();
         }
         Command::GenerateKey => {
             info!("Generating Server-Key");

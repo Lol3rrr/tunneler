@@ -1,18 +1,18 @@
-use crate::{Connection, Connections, Message, MessageHeader, MessageType};
+use crate::{Connections, Message, MessageHeader, MessageType};
 
 use log::error;
+use tokio::io::AsyncReadExt;
 
 pub async fn respond(
     id: u32,
     send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-    proxied_con: std::sync::Arc<Connection>,
-    users: std::sync::Arc<Connections<Connection>>,
+    mut read_user_con: tokio::io::ReadHalf<tokio::net::TcpStream>,
+    users: std::sync::Arc<Connections<tokio::sync::broadcast::Sender<Message>>>,
 ) {
     loop {
         let mut buf = vec![0; 4092];
-        match proxied_con.read(&mut buf).await {
+        match read_user_con.read(&mut buf).await {
             Ok(0) => {
-                proxied_con.close();
                 users.remove(id);
 
                 return;

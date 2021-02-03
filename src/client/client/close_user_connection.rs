@@ -1,12 +1,14 @@
-use crate::{Connection, Connections};
+use crate::{Connections, Message};
 
-use log::error;
+use log::{debug, error};
 
-pub fn close_user_connection(id: u32, users: &Connections<Connection>) {
+pub fn close_user_connection(
+    id: u32,
+    users: &Connections<tokio::sync::broadcast::Sender<Message>>,
+) {
     match users.remove(id) {
         Some(s) => {
-            s.1.close();
-            error!("[{}] Closed connection", id);
+            debug!("[{}] Closed connection", id);
         }
         None => {
             error!("[{}] Connection to close not found", id);

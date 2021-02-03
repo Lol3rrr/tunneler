@@ -3,14 +3,14 @@ use crate::{Connection, Connections, Destination};
 use crate::{Error, Message, MessageHeader, MessageType};
 
 use rand::RngCore;
-use rsa::{BigUint, PaddingScheme, PublicKey, RSAPublicKey};
-use tokio::net::TcpStream;
 
 mod close_user_connection;
+mod establish_connection;
+mod forward;
 mod heartbeat;
-mod read_forward;
+mod respond;
 
-use log::{debug, error, info};
+use log::{error, info};
 
 pub struct Client {
     server_destination: Destination,
@@ -40,186 +40,6 @@ impl Client {
         })
     }
 
-    async fn handle_connection(
-        server_con: std::sync::Arc<Connection>,
-        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-        outgoing: std::sync::Arc<Connections<Connection>>,
-        out_dest: &Destination,
-    ) -> Result<(), Error> {
-        loop {
-            let mut head_buf = [0; 13];
-            let header = match server_con.read(&mut head_buf).await {
-                Ok(0) => {
-                    return Err(Error::from(std::io::Error::from(
-                        std::io::ErrorKind::ConnectionReset,
-                    )));
-                }
-                Ok(_) => {
-                    let h = MessageHeader::deserialize(head_buf);
-                    if h.is_none() {
-                        error!("Deserializing Header: {:?}", head_buf);
-                        continue;
-                    }
-                    h.unwrap()
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                Err(e) => {
-                    error!("[Server] Reading from Req: {}", e);
-                    return Err(Error::from(e));
-                }
-            };
-
-            match header.get_kind() {
-                MessageType::Close => {
-                    debug!("[Server] Close Connection: {}", header.get_id());
-                    close_user_connection::close_user_connection(header.get_id(), &outgoing);
-                    continue;
-                }
-                MessageType::Data => {}
-                _ => {
-                    debug!(
-                        "[Server][{}] Unknown Operation: {:?}",
-                        header.get_id(),
-                        header.get_kind()
-                    );
-                    continue;
-                }
-            };
-
-            let data_length = header.get_length() as usize;
-            let mut buf = vec![0; data_length];
-            // Try to read data, this may still fail with `WouldBlock`
-            // if the readiness event is a false positive.
-            match server_con.read(&mut buf).await {
-                Ok(0) => continue,
-                Ok(n) => {
-                    if n != data_length {
-                        debug!(
-                            "Read bytes doesnt match body length: {} != {}",
-                            n, data_length
-                        );
-                    }
-
-                    let msg = Message::new(header, buf);
-                    read_forward::read_forward(send_queue.clone(), outgoing.clone(), out_dest, msg)
-                        .await;
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                Err(e) => {
-                    error!("[Server] Reading from Req: {}", e);
-                    continue;
-                }
-            };
-        }
-    }
-
-    // The validation flow is like this
-    //
-    // 1. Client connects
-    // 2. Server generates and sends public key
-    // 3. Client sends encrypted password/key
-    // 4. Server decrypts the message and checks if the password/key is valid
-    // 5a. If valid: Server sends an Acknowledge message and its done
-    // 5b. If invalid: Server closes the connection
-    async fn establish_connection(adr: &str, key: &[u8]) -> Option<std::sync::Arc<Connection>> {
-        let connection = match TcpStream::connect(&adr).await {
-            Ok(c) => c,
-            Err(e) => {
-                println!("Establishing-Connection: {}", e);
-                return None;
-            }
-        };
-        let connection_arc = std::sync::Arc::new(Connection::new(connection));
-
-        // Step 2 - Receive
-        let mut head_buf = [0; 13];
-        let header = match connection_arc.read(&mut head_buf).await {
-            Ok(0) => {
-                return None;
-            }
-            Ok(_) => {
-                let msg = MessageHeader::deserialize(head_buf);
-                msg.as_ref()?;
-                msg.unwrap()
-            }
-            Err(e) => {
-                println!("Error reading Message-Header: {}", e);
-                return None;
-            }
-        };
-        if *header.get_kind() != MessageType::Key {
-            return None;
-        }
-
-        let mut key_buf = [0; 4092];
-        let mut recv_pub_key = match connection_arc.read(&mut key_buf).await {
-            Ok(0) => {
-                return None;
-            }
-            Ok(n) => key_buf[0..n].to_vec(),
-            Err(e) => {
-                println!("Error reading pub-key: {}", e);
-                return None;
-            }
-        };
-
-        let e_bytes = recv_pub_key.split_off(256);
-        let n_bytes = recv_pub_key;
-
-        let pub_key = RSAPublicKey::new(
-            BigUint::from_bytes_le(&n_bytes),
-            BigUint::from_bytes_le(&e_bytes),
-        )
-        .expect("Could not create Public-Key");
-
-        let encrypted_key = pub_key
-            .encrypt(&mut rand::rngs::OsRng, PaddingScheme::PKCS1v15Encrypt, key)
-            .expect("Could not encrypt Key");
-
-        let msg_header = MessageHeader::new(0, MessageType::Verify, encrypted_key.len() as u64);
-        let msg = Message::new(msg_header, encrypted_key);
-
-        match connection_arc.write(&msg.serialize()).await {
-            Ok(_) => {}
-            Err(e) => {
-                println!("Validating-Key: {}", e);
-                return None;
-            }
-        };
-
-        loop {
-            let mut buf = [0; 13];
-            match connection_arc.read(&mut buf).await {
-                Ok(0) => {
-                    return None;
-                }
-                Ok(_) => {
-                    let header = MessageHeader::deserialize(buf);
-                    let header = header.as_ref()?;
-
-                    if *header.get_kind() != MessageType::Acknowledge {
-                        return None;
-                    }
-
-                    break;
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
-                }
-                Err(e) => {
-                    println!("Error while reading response: {}", e);
-                    return None;
-                }
-            };
-        }
-
-        Some(connection_arc)
-    }
-
     pub async fn heartbeat(
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
         wait_time: std::time::Duration,
@@ -227,6 +47,7 @@ impl Client {
         heartbeat::heartbeat(send_queue, wait_time).await;
     }
 
+    /// Sends all the messages to the server
     async fn sender(
         server_con: std::sync::Arc<Connection>,
         mut queue: tokio::sync::mpsc::UnboundedReceiver<Message>,
@@ -242,37 +63,107 @@ impl Client {
 
             let data = msg.serialize();
             let total_data_length = data.len();
-            let mut left_to_send = total_data_length;
-            let mut offset = 0;
-            while left_to_send > 0 {
-                match server_con.write(&data[offset..offset + left_to_send]).await {
-                    Ok(0) => {
-                        error!("[Sender] Wrote 0 bytes");
-                        return;
-                    }
-                    Ok(n) => {
-                        offset += n;
-                        left_to_send -= n;
 
-                        debug!("[Sender] Send {} out bytes", n);
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(e) => {
-                        error!("Sending Message: {}", e);
+            match server_con.write_total(&data, total_data_length).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Sending Message: {}", e);
+                    return;
+                }
+            };
+        }
+    }
+
+    /// Receives all the messages from the server
+    ///
+    /// Then adds the message to the matching connection queue.
+    /// If there is no matching queue, it creates and starts a new client,
+    /// which will then be placed into the Connection Manager for further
+    /// requests
+    async fn receiver(
+        server_con: std::sync::Arc<Connection>,
+        send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
+        client_cons: std::sync::Arc<Connections<tokio::sync::broadcast::Sender<Message>>>,
+        out_dest: &Destination,
+    ) {
+        loop {
+            let mut head_buf = [0; 13];
+            let header = match server_con.read_total(&mut head_buf, 13).await {
+                Ok(_) => match MessageHeader::deserialize(head_buf) {
+                    Some(s) => s,
+                    None => {
+                        error!("[Receiver] Deserializing Header: {:?}", head_buf);
                         return;
                     }
+                },
+                Err(e) => {
+                    error!("[Receiver] Reading Data: {}", e);
+                    return;
                 }
-            }
+            };
+
+            let id = header.get_id();
+            let kind = header.get_kind();
+            match kind {
+                MessageType::Close => {
+                    info!("[Receiver] Received Close Message: {}", id);
+                    close_user_connection::close_user_connection(id, &client_cons);
+                    continue;
+                }
+                MessageType::Data => {}
+                _ => {
+                    error!("[Receiver][{}] Unexpected Operation: {:?}", id, kind);
+                    continue;
+                }
+            };
+
+            let data_length = header.get_length() as usize;
+            let mut buf = vec![0; data_length];
+            let msg = match server_con.read_total(&mut buf, data_length).await {
+                Ok(_) => Message::new(header, buf),
+                Err(e) => {
+                    error!("[Receiver][{}] Receiving Data: {}", e, id);
+                    close_user_connection::close_user_connection(id, &client_cons);
+                    continue;
+                }
+            };
+
+            let con_queue = match client_cons.get(id) {
+                Some(send_queue) => send_queue,
+                // In case there is no matching user-connection, create a new one
+                None => {
+                    // Connects out to the server
+                    let raw_con = out_dest.connect().await.unwrap();
+                    let (read_con, write_con) = tokio::io::split(raw_con);
+
+                    // Setup the send channel for requests for this user
+                    let (tx, rx) = tokio::sync::broadcast::channel(25);
+                    let user_con_send_arc = std::sync::Arc::new(tx);
+                    // Add the Connection to the current map of user-connection
+                    client_cons.set(id, user_con_send_arc.clone());
+                    // Starting the receive and send tasks for this connection
+                    tokio::task::spawn(respond::respond(
+                        id,
+                        send_queue.clone(),
+                        read_con,
+                        client_cons.clone(),
+                    ));
+                    tokio::task::spawn(forward::forward(write_con, rx));
+                    user_con_send_arc
+                }
+            };
+
+            match con_queue.send(msg) {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("[Receiver][{}] Adding to Queue: {}", id, e);
+                }
+            };
         }
     }
 
     pub async fn start(&self) -> Result<(), Error> {
         info!("Starting...");
-
-        let outgoing: std::sync::Arc<Connections<Connection>> =
-            std::sync::Arc::new(Connections::new());
 
         let mut attempts = 0;
         let wait_base: u64 = 2;
@@ -283,7 +174,7 @@ impl Client {
                 self.server_destination.get_full_address()
             );
 
-            let connection_arc = match Client::establish_connection(
+            let connection_arc = match establish_connection::establish_connection(
                 &self.server_destination.get_full_address(),
                 &self.key,
             )
@@ -313,6 +204,8 @@ impl Client {
             attempts = 0;
 
             let (queue_tx, queue_rx) = tokio::sync::mpsc::unbounded_channel();
+            let outgoing =
+                std::sync::Arc::new(Connections::<tokio::sync::broadcast::Sender<Message>>::new());
 
             tokio::task::spawn(Client::sender(connection_arc.clone(), queue_rx));
 
@@ -321,16 +214,13 @@ impl Client {
                 std::time::Duration::from_secs(15),
             ));
 
-            if let Err(e) = Client::handle_connection(
+            Client::receiver(
                 connection_arc,
-                queue_tx,
-                outgoing.clone(),
+                queue_tx.clone(),
+                outgoing,
                 &self.out_destination,
             )
-            .await
-            {
-                error!("{}", e);
-            }
+            .await;
         }
     }
 }

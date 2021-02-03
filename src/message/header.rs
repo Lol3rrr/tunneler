@@ -2,7 +2,7 @@ use std::convert::TryInto;
 
 use crate::message::MessageType;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct MessageHeader {
     pub id: u32,           // 4 bytes
     pub kind: MessageType, // 1 byte

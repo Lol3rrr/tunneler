@@ -48,11 +48,7 @@ impl Client {
     pub async fn read_respond(self) {
         loop {
             let mut head_buf = [0; 13];
-            let header = match self.con.read(&mut head_buf).await {
-                Ok(0) => {
-                    self.close();
-                    return;
-                }
+            let header = match self.con.read_total(&mut head_buf, 13).await {
                 Ok(_) => {
                     let h = MessageHeader::deserialize(head_buf);
                     if h.is_none() {
@@ -60,9 +56,6 @@ impl Client {
                         continue;
                     }
                     h.unwrap()
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    continue;
                 }
                 Err(e) => {
                     error!("[{}] Reading from Client-Connection: {}", self.get_id(), e);
@@ -152,36 +145,19 @@ impl Client {
 
             let data = msg.serialize();
             let total_data_length = data.len();
-            let mut left_to_send = total_data_length;
-            let mut offset: usize = 0;
-            while left_to_send > 0 {
-                debug!(
-                    "[{}][Sender] {} out of {} bytes left",
-                    self.get_id(),
-                    left_to_send,
-                    total_data_length
-                );
-
-                match self.con.write(&data[offset..offset + left_to_send]).await {
-                    Ok(0) => {
-                        error!("[{}][Sender] Wrote 0 bytes", self.get_id());
-                        return;
-                    }
-                    Ok(n) => {
-                        offset += n;
-                        left_to_send -= n;
-
-                        debug!("[{}][Sender] Send {} out bytes", self.get_id(), n);
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        continue;
-                    }
-                    Err(e) => {
-                        error!("[{}][Sender] Sending Message: {}", self.get_id(), e);
-                        return;
-                    }
-                };
-            }
+            match self.con.write_total(&data, total_data_length).await {
+                Ok(_) => {
+                    debug!(
+                        "[{}][Sender] Send {} out bytes",
+                        self.get_id(),
+                        total_data_length
+                    );
+                }
+                Err(e) => {
+                    error!("[{}][Sender] Sending Message: {}", self.get_id(), e);
+                    return;
+                }
+            };
         }
     }
 
@@ -199,7 +175,7 @@ impl Client {
             //
             // this may still fail with `WouldBlock` if the readiness event is
             // a false positive.
-            match con.read(&mut buf).await {
+            match con.read_raw(&mut buf).await {
                 Ok(0) => {
                     break;
                 }

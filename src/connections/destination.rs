@@ -17,10 +17,10 @@ impl Destination {
         }
     }
 
-    pub async fn connect(&self) -> std::io::Result<Connection> {
+    pub async fn connect(&self) -> std::io::Result<tokio::net::TcpStream> {
         let stream = tokio::net::TcpStream::connect(&self.formatted).await?;
 
-        Ok(Connection::new(stream))
+        Ok(stream)
     }
 
     pub fn get_full_address<'a>(&'a self) -> &'a str {
