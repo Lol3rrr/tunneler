@@ -17,6 +17,7 @@ dashmap = { version = "4.0.2" }
 rsa = { version = "0.3.0" }
 dirs = { version = "3.0.1" }
 base64 = { version = "0.13.0" }
+chrono = { version = "0.4.19" }
 
 [dev-dependencies]
 criterion = "0.3"
