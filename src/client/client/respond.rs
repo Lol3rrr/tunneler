@@ -1,6 +1,6 @@
 use crate::{Connections, Message, MessageHeader, MessageType};
 
-use log::error;
+use log::{debug, error};
 use tokio::io::AsyncReadExt;
 
 pub async fn respond(
@@ -14,7 +14,7 @@ pub async fn respond(
         match read_user_con.read(&mut buf).await {
             Ok(0) => {
                 debug!("[{}][Proxied] Read 0 Bytes", id);
-                debug!("[{}][Proxied] Closing connection");
+                debug!("[{}][Proxied] Closing connection", id);
                 //users.remove(id);
 
                 //return;
