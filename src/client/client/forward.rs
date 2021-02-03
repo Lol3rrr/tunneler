@@ -1,6 +1,6 @@
 use crate::Message;
 
-use log::error;
+use log::{debug, error};
 use tokio::io::AsyncWriteExt;
 
 pub async fn forward(
