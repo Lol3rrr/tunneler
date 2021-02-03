@@ -15,11 +15,24 @@ pub async fn respond(
             Ok(0) => {
                 debug!("[{}][Proxied] Read 0 Bytes", id);
                 debug!("[{}][Proxied] Closing connection", id);
-                //users.remove(id);
+                users.remove(id);
+                let header = MessageHeader::new(id, MessageType::Close, 0);
+                let msg = Message::new(header, vec![]);
+                match send_queue.send(msg) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!(
+                            "[{}][Proxied] Adding Close message to Server-Queue: {}",
+                            id, e
+                        );
+                    }
+                };
 
-                //return;
+                return;
             }
             Ok(n) => {
+                debug!("[{}][Proxied] Read {} Bytes", id, n);
+
                 let header = MessageHeader::new(id, MessageType::Data, n as u64);
                 let msg = Message::new(header, buf);
                 match send_queue.send(msg) {
