@@ -213,6 +213,15 @@ impl Client {
 
             match header.get_kind() {
                 MessageType::Data => {}
+                MessageType::Close => {
+                    match user_cons.remove(header.get_id()) {
+                        Some(_) => {}
+                        None => {
+                            error!("[{}][{}] Could not remove Connection", id, header.get_id());
+                        }
+                    };
+                    continue;
+                }
                 _ => {
                     error!(
                         "[{}][{}] Unexpected Operation: {:?}",
@@ -221,6 +230,7 @@ impl Client {
                         header.get_kind()
                     );
                     Client::drain(&mut read_con, header.get_length() as usize).await;
+                    continue;
                 }
             };
 
