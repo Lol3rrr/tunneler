@@ -106,8 +106,15 @@ impl Client {
             let kind = header.get_kind();
             match kind {
                 MessageType::Close => {
-                    info!("[Receiver] Received Close Message: {}", id);
-                    close_user_connection::close_user_connection(id, &client_cons);
+                    match client_cons.remove(id) {
+                        Some(_) => {
+                            info!("[Receiver][{}] Closed Connection", id);
+                        }
+                        None => {
+                            error!("[Receiver][{}] Close Connection not found", id);
+                        }
+                    };
+
                     continue;
                 }
                 MessageType::Data => {}
