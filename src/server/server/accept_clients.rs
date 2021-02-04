@@ -1,5 +1,4 @@
 use crate::server::client::{Client, ClientManager};
-use crate::Connections;
 
 use rand::Rng;
 use tokio::net::TcpListener;
@@ -38,9 +37,8 @@ pub async fn accept_clients(
 
         let client = Client::new(c_id, clients.clone(), queue_tx);
 
-        let user_cons = std::sync::Arc::new(Connections::new());
         tokio::task::spawn(Client::sender(c_id, tx, queue_rx));
-        tokio::task::spawn(Client::receiver(c_id, rx, user_cons.clone()));
+        tokio::task::spawn(Client::receiver(c_id, rx, client.get_user_cons()));
 
         clients.add(client);
     }

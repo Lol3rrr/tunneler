@@ -1,14 +1,18 @@
 use crate::server::client::ClientManager;
+use crate::streams::spsc;
 use crate::Connections;
 use crate::{Message, MessageHeader, MessageType};
 
 use log::{debug, error};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+/// This Client represents a single Connection a Client Instance
+///
+/// All User-Connections are handled by an instance of this Struct
 #[derive(Clone)]
 pub struct Client {
     id: u32,
-    user_cons: std::sync::Arc<Connections<tokio::net::tcp::OwnedWriteHalf>>,
+    user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
     client_manager: std::sync::Arc<ClientManager>,
     client_send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
 }
@@ -31,10 +35,14 @@ impl Client {
         self.id
     }
 
+    pub fn get_user_cons(&self) -> std::sync::Arc<Connections<spsc::StreamWriter<Message>>> {
+        self.user_cons.clone()
+    }
+
     async fn close_user_connection(
         user_id: u32,
         client_id: u32,
-        user_cons: std::sync::Arc<Connections<tokio::net::tcp::OwnedWriteHalf>>,
+        user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
     ) {
         user_cons.remove(user_id);
@@ -56,9 +64,11 @@ impl Client {
     /// * con: The new user connection
     pub fn new_con(&self, user_id: u32, con: tokio::net::TcpStream) {
         let (read_con, write_con) = con.into_split();
-        self.user_cons.set(user_id, write_con);
+        let (tx, rx) = spsc::stream();
+        self.user_cons.set(user_id, tx);
 
-        tokio::task::spawn(Self::handle_user_connection(
+        tokio::task::spawn(Self::send_user_connection(self.id, user_id, write_con, rx));
+        tokio::task::spawn(Self::recv_user_connection(
             self.id,
             user_id,
             read_con,
@@ -67,7 +77,40 @@ impl Client {
         ));
     }
 
-    /// Handles a new User-Connection
+    /// Reads messages from the Client for this User and sends them to the User
+    ///
+    /// Params:
+    /// * client_id: The ID of the client that handles this
+    /// * user_id: The ID of the User for this connection
+    /// * con: The User-Connection
+    /// * queue: The Queue for messages that need to be send to the user
+    async fn send_user_connection(
+        client_id: u32,
+        user_id: u32,
+        mut con: tokio::net::tcp::OwnedWriteHalf,
+        mut queue: spsc::StreamReader<Message>,
+    ) {
+        loop {
+            let msg = match queue.recv().await {
+                Ok(m) => m,
+                Err(e) => {
+                    error!("[{}][{}] Receiving from Queue: {}", client_id, user_id, e);
+                    return;
+                }
+            };
+
+            let data = msg.get_data();
+            match con.write_all(&data).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("[{}][{}] Sending to User: {}", client_id, user_id, e);
+                    return;
+                }
+            };
+        }
+    }
+
+    /// Reads from a new User-Connection and sends it to the client
     ///
     /// Params:
     /// * client: The Server-Client to use
@@ -75,12 +118,12 @@ impl Client {
     /// * con: The User-Connection
     /// * send_queue: The Queue for requests going out to the Client
     /// * user_cons: The User-Connections belonging to this Client
-    async fn handle_user_connection(
+    async fn recv_user_connection(
         client_id: u32,
         user_id: u32,
         mut con: tokio::net::tcp::OwnedReadHalf,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-        user_cons: std::sync::Arc<Connections<tokio::net::tcp::OwnedWriteHalf>>,
+        user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
     ) {
         // Reads and forwards all the data from the socket to the client
         loop {
@@ -144,7 +187,7 @@ impl Client {
     pub async fn receiver(
         id: u32,
         mut read_con: tokio::net::tcp::OwnedReadHalf,
-        user_cons: std::sync::Arc<Connections<tokio::net::tcp::OwnedWriteHalf>>,
+        user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
     ) {
         loop {
             let mut head_buf = [0; 13];
@@ -182,7 +225,7 @@ impl Client {
             };
 
             // Forwarding the message to the actual user
-            let mut user_con = match user_cons.get_mut(header.get_id()) {
+            let stream = match user_cons.get(header.get_id()) {
                 Some(s) => s,
                 None => {
                     error!("[{}] No Connection found with ID: {}", id, header.get_id());
@@ -204,10 +247,11 @@ impl Client {
                 }
             };
 
-            match user_con.write_all(&body_buf).await {
+            let user_id = header.get_id();
+            match stream.send(Message::new(header, body_buf)) {
                 Ok(_) => {}
                 Err(e) => {
-                    error!("[{}][{}] Writing to User: {}", id, header.get_id(), e);
+                    error!("[{}][{}] Adding to User-Queue: {}", id, user_id, e);
                 }
             };
         }

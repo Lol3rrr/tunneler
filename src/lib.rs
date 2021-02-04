@@ -2,6 +2,7 @@ mod error;
 pub use error::Error;
 
 pub mod general;
+pub mod streams;
 
 mod message;
 pub use message::*;
