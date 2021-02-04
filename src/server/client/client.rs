@@ -3,12 +3,13 @@ use crate::{Connection, Connections};
 use crate::{Message, MessageHeader, MessageType};
 
 use log::{debug, error};
+use tokio::io::AsyncWriteExt;
 
 #[derive(Clone)]
 pub struct Client {
     id: u32,
     con: std::sync::Arc<Connection>,
-    user_cons: std::sync::Arc<Connections<std::sync::Arc<Connection>>>,
+    user_cons: std::sync::Arc<Connections<tokio::net::tcp::OwnedWriteHalf>>,
     client_manager: std::sync::Arc<ClientManager>,
     send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
 }
@@ -79,7 +80,7 @@ impl Client {
             };
 
             // Forwarding the message to the actual user
-            let user_con = match self.user_cons.get(header.get_id()) {
+            let mut user_con = match self.user_cons.get_mut(header.get_id()) {
                 Some(s) => s,
                 None => {
                     error!(
@@ -96,15 +97,25 @@ impl Client {
                 }
             };
 
-            match self
-                .con
-                .forward_to_connection(&header, user_con.clone())
-                .await
-            {
+            let body_length = header.get_length() as usize;
+            let mut body_buf = vec![0; body_length];
+            match self.con.read_total(&mut body_buf, body_length).await {
                 Ok(_) => {}
                 Err(e) => {
                     error!(
-                        "[{}][{}] Forwarding to User-Connection: {}",
+                        "[{}][{}] Reading from Client: {}",
+                        self.get_id(),
+                        header.get_id(),
+                        e
+                    );
+                }
+            };
+
+            match user_con.write_all(&body_buf).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(
+                        "[{}][{}] Writing to User: {}",
                         self.get_id(),
                         header.get_id(),
                         e
@@ -168,7 +179,7 @@ impl Client {
     /// * client: The Server-Client to use
     /// * id: The ID of the user-connection
     /// * con: The User-Connection
-    async fn process_connection(client: Self, id: u32, con: std::sync::Arc<Connection>) {
+    async fn process_connection(client: Self, id: u32, mut con: tokio::net::tcp::OwnedReadHalf) {
         // Reads and forwards all the data from the socket to the client
         loop {
             let mut buf = vec![0; 4092];
@@ -176,7 +187,7 @@ impl Client {
             //
             // this may still fail with `WouldBlock` if the readiness event is
             // a false positive.
-            match con.read_raw(&mut buf).await {
+            match con.read(&mut buf).await {
                 Ok(0) => {
                     break;
                 }
@@ -217,9 +228,10 @@ impl Client {
     /// Params:
     /// * id: The ID of the new user connection
     /// * con: The new user connection
-    pub fn new_con(&self, id: u32, con: std::sync::Arc<Connection>) {
-        self.user_cons.set(id, con.clone());
+    pub fn new_con(&self, id: u32, mut con: tokio::net::TcpStream) {
+        let (read_con, write_con) = con.into_split();
+        self.user_cons.set(id, write_con);
 
-        tokio::task::spawn(Self::process_connection(self.clone(), id, con));
+        tokio::task::spawn(Self::process_connection(self.clone(), id, read_con));
     }
 }

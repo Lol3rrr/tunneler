@@ -53,7 +53,7 @@ impl Server {
 
         loop {
             let socket = match req_listener.accept().await {
-                Ok((raw_socket, _)) => std::sync::Arc::new(Connection::new(raw_socket)),
+                Ok((raw_socket, _)) => Connection::new(raw_socket),
                 Err(e) => {
                     error!("Accepting Req-Connection: {}", e);
                     continue;

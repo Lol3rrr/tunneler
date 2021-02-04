@@ -18,10 +18,11 @@ impl<T> Connections<T> {
     }
 
     pub fn get(&self, id: u32) -> Option<dashmap::mapref::one::Ref<u32, T>> {
-        match self.connections.get(&id) {
-            None => None,
-            Some(s) => Some(s),
-        }
+        self.connections.get(&id)
+    }
+
+    pub fn get_mut(&self, id: u32) -> Option<dashmap::mapref::one::RefMut<u32, T>> {
+        self.connections.get_mut(&id)
     }
 
     pub fn set(&self, id: u32, con: T) {
