@@ -1,5 +1,6 @@
 use crate::server::client::ClientManager;
 use crate::streams::spsc;
+use crate::streams::{RecvError, SendError};
 use crate::Connections;
 use crate::{Message, MessageHeader, MessageType};
 
@@ -12,7 +13,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[derive(Clone)]
 pub struct Client {
     id: u32,
-    user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
+    user_cons: Connections<spsc::StreamWriter<Message>>,
     client_manager: std::sync::Arc<ClientManager>,
     client_send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
 }
@@ -25,7 +26,7 @@ impl Client {
     ) -> Client {
         Client {
             id,
-            user_cons: std::sync::Arc::new(Connections::new()),
+            user_cons: Connections::new(),
             client_manager,
             client_send_queue: send_queue,
         }
@@ -35,14 +36,14 @@ impl Client {
         self.id
     }
 
-    pub fn get_user_cons(&self) -> std::sync::Arc<Connections<spsc::StreamWriter<Message>>> {
+    pub fn get_user_cons(&self) -> Connections<spsc::StreamWriter<Message>> {
         self.user_cons.clone()
     }
 
     async fn close_user_connection(
         user_id: u32,
         client_id: u32,
-        user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
+        user_cons: Connections<spsc::StreamWriter<Message>>,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
     ) {
         user_cons.remove(user_id);
@@ -94,7 +95,9 @@ impl Client {
             let msg = match queue.recv().await {
                 Ok(m) => m,
                 Err(e) => {
-                    error!("[{}][{}] Receiving from Queue: {}", client_id, user_id, e);
+                    if e != RecvError::Closed {
+                        error!("[{}][{}] Receiving from Queue: {}", client_id, user_id, e);
+                    }
                     return;
                 }
             };
@@ -123,7 +126,7 @@ impl Client {
         user_id: u32,
         mut con: tokio::net::tcp::OwnedReadHalf,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-        user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
+        user_cons: Connections<spsc::StreamWriter<Message>>,
     ) {
         // Reads and forwards all the data from the socket to the client
         loop {
@@ -149,6 +152,7 @@ impl Client {
                                 "[{}][{}] Forwarding message to client: {}",
                                 client_id, user_id, e
                             );
+                            break;
                         }
                     };
                 }
@@ -157,14 +161,12 @@ impl Client {
                 }
                 Err(e) => {
                     error!("[{}][{}] Reading from User-Con: {}", client_id, user_id, e);
-                    if e.kind() == std::io::ErrorKind::ConnectionReset {
-                        Client::close_user_connection(user_id, client_id, user_cons, send_queue)
-                            .await;
-                    }
-                    return;
+                    break;
                 }
             }
         }
+
+        Client::close_user_connection(user_id, client_id, user_cons, send_queue).await;
     }
 
     async fn drain(read_con: &mut tokio::net::tcp::OwnedReadHalf, size: usize) {
@@ -187,7 +189,7 @@ impl Client {
     pub async fn receiver(
         id: u32,
         mut read_con: tokio::net::tcp::OwnedReadHalf,
-        user_cons: std::sync::Arc<Connections<spsc::StreamWriter<Message>>>,
+        user_cons: Connections<spsc::StreamWriter<Message>>,
     ) {
         loop {
             let mut head_buf = [0; 13];

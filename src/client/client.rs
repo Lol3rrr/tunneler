@@ -1,3 +1,4 @@
+use crate::streams::{mpsc, SendError};
 use crate::Arguments;
 use crate::{Connection, Connections, Destination};
 use crate::{Error, Message, MessageHeader, MessageType};
@@ -83,7 +84,7 @@ impl Client {
     async fn receiver(
         server_con: std::sync::Arc<Connection>,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-        client_cons: std::sync::Arc<Connections<tokio::sync::broadcast::Sender<Message>>>,
+        client_cons: std::sync::Arc<Connections<mpsc::StreamWriter<Message>>>,
         out_dest: &Destination,
     ) {
         loop {
@@ -144,7 +145,7 @@ impl Client {
                     let (read_con, write_con) = tokio::io::split(raw_con);
 
                     // Setup the send channel for requests for this user
-                    let (tx, rx) = tokio::sync::broadcast::channel(25);
+                    let (tx, rx) = mpsc::stream();
                     // Add the Connection to the current map of user-connection
                     client_cons.set(id, tx.clone());
                     // Starting the receive and send tasks for this connection
@@ -210,8 +211,7 @@ impl Client {
             attempts = 0;
 
             let (queue_tx, queue_rx) = tokio::sync::mpsc::unbounded_channel();
-            let outgoing =
-                std::sync::Arc::new(Connections::<tokio::sync::broadcast::Sender<Message>>::new());
+            let outgoing = std::sync::Arc::new(Connections::<mpsc::StreamWriter<Message>>::new());
 
             tokio::task::spawn(Client::sender(connection_arc.clone(), queue_rx));
 

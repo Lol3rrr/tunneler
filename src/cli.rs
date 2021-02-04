@@ -18,4 +18,7 @@ pub struct Arguments {
 
     #[structopt(long = "key", short = "k")]
     pub key_path: Option<String>,
+
+    #[structopt(long = "threads", short = "t")]
+    pub threads: Option<usize>,
 }

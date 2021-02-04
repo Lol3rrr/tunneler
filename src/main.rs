@@ -43,8 +43,9 @@ fn main() {
     let core_count = num_cpus::get();
     info!("Cores: {}", core_count);
 
-    let min_threads = 4;
-    let threads = std::cmp::max(min_threads, core_count);
+    let min_threads = 3;
+    let auto_threads = std::cmp::max(min_threads, core_count);
+    let threads: usize = arguments.threads.unwrap_or(auto_threads);
     info!("Threads: {}", threads);
 
     let rt = tokio::runtime::Builder::new_multi_thread()

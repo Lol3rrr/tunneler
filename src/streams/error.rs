@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq)]
 pub enum SendError {
     Full,
     Closed,
@@ -22,6 +23,7 @@ impl<T> From<tokio::sync::mpsc::error::SendError<T>> for SendError {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum RecvError {
     Closed,
 }
