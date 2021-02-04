@@ -1,6 +1,6 @@
 use crate::server::client::ClientManager;
 use crate::Arguments;
-use crate::{Connection, Error};
+use crate::Error;
 
 use rand::Rng;
 use tokio::net::TcpListener;
@@ -51,9 +51,10 @@ impl Server {
 
         let mut rng = rand::thread_rng();
 
+        // Accepting User-Requests
         loop {
             let socket = match req_listener.accept().await {
-                Ok((raw_socket, _)) => Connection::new(raw_socket),
+                Ok((raw_socket, _)) => raw_socket,
                 Err(e) => {
                     error!("Accepting Req-Connection: {}", e);
                     continue;

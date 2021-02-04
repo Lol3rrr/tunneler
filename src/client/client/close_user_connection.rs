@@ -7,7 +7,7 @@ pub fn close_user_connection(
     users: &Connections<tokio::sync::broadcast::Sender<Message>>,
 ) {
     match users.remove(id) {
-        Some(s) => {
+        Some(_) => {
             debug!("[{}] Closed connection", id);
         }
         None => {

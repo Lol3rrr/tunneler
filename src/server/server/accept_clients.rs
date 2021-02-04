@@ -1,5 +1,5 @@
 use crate::server::client::{Client, ClientManager};
-use crate::Connection;
+use crate::Connections;
 
 use rand::Rng;
 use tokio::net::TcpListener;
@@ -15,28 +15,33 @@ pub async fn accept_clients(
 ) {
     loop {
         // Get Client
-        let client = match listen.accept().await {
-            Ok((socket, _)) => std::sync::Arc::new(Connection::new(socket)),
+        let mut client_socket = match listen.accept().await {
+            Ok((socket, _)) => socket,
             Err(e) => {
                 error!("Accepting client-connection: {}", e);
                 continue;
             }
         };
 
-        if !validate_connection::validate_connection(client.clone(), &key).await {
+        if !validate_connection::validate_connection(&mut client_socket, &key).await {
             error!("Rejected Client");
             continue;
         }
 
-        info!("Accepted client");
-
         let c_id: u32 = rand::thread_rng().gen();
+
+        info!("Accepted client: {}", c_id);
+
+        let (rx, tx) = client_socket.into_split();
+
         let (queue_tx, queue_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        let client_con = Client::new(c_id, client, clients.clone(), queue_tx);
-        tokio::task::spawn(Client::sender(client_con.clone(), queue_rx));
-        tokio::task::spawn(client_con.clone().read_respond());
+        let client = Client::new(c_id, clients.clone(), queue_tx);
 
-        clients.add(client_con);
+        let user_cons = std::sync::Arc::new(Connections::new());
+        tokio::task::spawn(Client::sender(c_id, tx, queue_rx));
+        tokio::task::spawn(Client::receiver(c_id, rx, user_cons.clone()));
+
+        clients.add(client);
     }
 }
