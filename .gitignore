@@ -1,5 +1,4 @@
 /target
-flame.sv
-flame.svg
+*.svg
 perf.data
-perf.data.old
+stacks.folded
