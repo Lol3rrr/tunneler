@@ -1,6 +1,6 @@
 use crate::server::client::ClientManager;
 use crate::streams::spsc;
-use crate::streams::{RecvError, SendError};
+use crate::streams::RecvError;
 use crate::Connections;
 use crate::{Message, MessageHeader, MessageType};
 

@@ -1,4 +1,4 @@
-use crate::streams::{mpsc, SendError};
+use crate::streams::mpsc;
 use crate::Arguments;
 use crate::{Connection, Connections, Destination};
 use crate::{Error, Message, MessageHeader, MessageType};
