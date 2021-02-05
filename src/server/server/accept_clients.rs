@@ -37,9 +37,15 @@ pub async fn accept_clients(
 
         let client = Client::new(c_id, clients.clone(), queue_tx);
 
-        tokio::task::spawn(Client::sender(c_id, tx, queue_rx));
-        tokio::task::spawn(Client::receiver(c_id, rx, client.get_user_cons()));
+        tokio::task::spawn(Client::sender(c_id, tx, queue_rx, clients.clone()));
+        tokio::task::spawn(Client::receiver(
+            c_id,
+            rx,
+            client.get_user_cons(),
+            clients.clone(),
+        ));
 
-        clients.add(client);
+        let n_client_count = clients.add(client);
+        info!("Connected Clients: {}", n_client_count);
     }
 }

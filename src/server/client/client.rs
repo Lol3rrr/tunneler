@@ -4,7 +4,7 @@ use crate::streams::RecvError;
 use crate::Connections;
 use crate::{Message, MessageHeader, MessageType};
 
-use log::{debug, error};
+use log::{debug, error, info};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// This Client represents a single Connection a Client Instance
@@ -190,6 +190,7 @@ impl Client {
         id: u32,
         mut read_con: tokio::net::tcp::OwnedReadHalf,
         user_cons: Connections<spsc::StreamWriter<Message>>,
+        client_manager: std::sync::Arc<ClientManager>,
     ) {
         loop {
             let mut head_buf = [0; 13];
@@ -204,6 +205,8 @@ impl Client {
                 }
                 Err(e) => {
                     error!("[{}] Reading from Client-Connection: {}", id, e);
+                    let client_count = client_manager.remove_con(id);
+                    info!("Connected Clients: {}", client_count);
                     return;
                 }
             };
@@ -280,12 +283,15 @@ impl Client {
         id: u32,
         mut write_con: tokio::net::tcp::OwnedWriteHalf,
         mut queue: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        client_manager: std::sync::Arc<ClientManager>,
     ) {
         loop {
             let msg = match queue.recv().await {
                 Some(m) => m,
                 None => {
                     error!("[{}][Sender] Receiving Message from Queue", id);
+                    let client_count = client_manager.remove_con(id);
+                    info!("Connected Clients: {}", client_count);
                     return;
                 }
             };
@@ -298,6 +304,8 @@ impl Client {
                 }
                 Err(e) => {
                     error!("[{}][Sender] Sending Message: {}", id, e);
+                    let client_count = client_manager.remove_con(id);
+                    info!("Connected Clients: {}", client_count);
                     return;
                 }
             };

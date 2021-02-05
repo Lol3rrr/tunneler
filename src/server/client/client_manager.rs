@@ -47,17 +47,28 @@ impl ClientManager {
     ///
     /// Params:
     /// * client: The client to add
-    pub fn add(&self, client: Client) {
+    ///
+    /// Returns:
+    /// This function returns the new number of clients managed
+    /// by this
+    pub fn add(&self, client: Client) -> usize {
         let mut clients_data = self.clients.lock().unwrap();
         clients_data.push(client);
+        let count = clients_data.len();
         drop(clients_data);
+
+        count
     }
 
     /// This is used to remove a client connection again
     ///
     /// Params:
     /// * id: The ID of the connection to remove
-    pub fn remove_con(&self, id: u32) {
+    ///
+    /// Returns:
+    /// This function returns the new number of clients managed
+    /// by this
+    pub fn remove_con(&self, id: u32) -> usize {
         let mut client_data = self.clients.lock().unwrap();
         let mut remove_index: Option<usize> = None;
         for (index, client) in client_data.iter().enumerate() {
@@ -74,6 +85,10 @@ impl ClientManager {
             }
         };
 
+        let count = client_data.len();
+
         drop(client_data);
+
+        count
     }
 }
