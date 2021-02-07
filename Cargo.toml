@@ -10,7 +10,7 @@ edition = "2018"
 log = "0.4.11"
 env_logger = "0.8.2"
 structopt = "0.3.21"
-tokio = { version = "1.1.0", features = ["rt", "net", "rt-multi-thread", "io-util", "time", "sync"] }
+tokio = { version = "1.1.0", features = ["rt", "net", "rt-multi-thread", "io-util", "time", "sync", "macros"] }
 rand = { version = "0.7.0", features = ["getrandom"] }
 num_cpus = "1.13.0"
 dashmap = { version = "4.0.2" }

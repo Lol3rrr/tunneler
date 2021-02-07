@@ -21,4 +21,7 @@ pub struct Arguments {
 
     #[structopt(long = "threads", short = "t")]
     pub threads: Option<usize>,
+
+    #[structopt(long = "pool-size", short = "ps")]
+    pub pool_size: Option<usize>,
 }

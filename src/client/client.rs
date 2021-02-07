@@ -1,3 +1,4 @@
+use crate::pool::manager::Manager;
 use crate::streams::mpsc;
 use crate::Arguments;
 use crate::{Connection, Connections, Destination};
@@ -17,6 +18,7 @@ pub struct Client {
     server_destination: Destination,
     out_destination: Destination,
     key: Vec<u8>,
+    pool_size: usize,
 }
 
 impl Client {
@@ -34,10 +36,13 @@ impl Client {
         );
         let out_dest = Destination::new(cli.out_ip, cli.public_port.expect("Loading Public Port"));
 
+        let pool_size = cli.pool_size.unwrap_or(20);
+
         Ok(Client {
             server_destination: server_dest,
             out_destination: out_dest,
             key,
+            pool_size,
         })
     }
 
@@ -85,7 +90,7 @@ impl Client {
         server_con: std::sync::Arc<Connection>,
         send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
         client_cons: std::sync::Arc<Connections<mpsc::StreamWriter<Message>>>,
-        out_dest: &Destination,
+        pool: std::sync::Arc<Manager>,
     ) {
         loop {
             let mut head_buf = [0; 13];
@@ -140,9 +145,8 @@ impl Client {
                 Some(send_queue) => send_queue.clone(),
                 // In case there is no matching user-connection, create a new one
                 None => {
-                    // Connects out to the server
-                    let raw_con = out_dest.connect().await.unwrap();
-                    let (read_con, write_con) = tokio::io::split(raw_con);
+                    // Obtains a simple connection from the pool to the server
+                    let (read_con, write_con) = pool.get().await.unwrap();
 
                     // Setup the send channel for requests for this user
                     let (tx, rx) = mpsc::stream();
@@ -180,6 +184,10 @@ impl Client {
                 "Conneting to server: {}",
                 self.server_destination.get_full_address()
             );
+
+            let con_pool_arc =
+                std::sync::Arc::new(Manager::new(self.out_destination.clone(), self.pool_size));
+            tokio::task::spawn(Manager::start(con_pool_arc.clone()));
 
             let connection_arc = match establish_connection::establish_connection(
                 &self.server_destination.get_full_address(),
@@ -224,7 +232,7 @@ impl Client {
                 connection_arc,
                 queue_tx.clone(),
                 outgoing,
-                &self.out_destination,
+                con_pool_arc.clone(),
             )
             .await;
         }

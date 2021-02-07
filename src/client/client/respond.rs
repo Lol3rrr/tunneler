@@ -1,15 +1,17 @@
+use crate::pool;
 use crate::streams::mpsc;
 use crate::{Connections, Message, MessageHeader, MessageType};
 
-use log::{debug, error};
+use log::error;
 use tokio::io::AsyncReadExt;
 
 pub async fn respond(
     id: u32,
     send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-    mut read_user_con: tokio::io::ReadHalf<tokio::net::TcpStream>,
+    mut raw_read_user_con: pool::connection::Connection<tokio::net::tcp::OwnedReadHalf>,
     users: std::sync::Arc<Connections<mpsc::StreamWriter<Message>>>,
 ) {
+    let read_user_con = raw_read_user_con.as_mut();
     loop {
         let mut buf = vec![0; 4092];
         match read_user_con.read(&mut buf).await {
@@ -17,8 +19,6 @@ pub async fn respond(
                 break;
             }
             Ok(n) => {
-                debug!("[{}] Read {} Bytes", id, n);
-
                 let header = MessageHeader::new(id, MessageType::Data, n as u64);
                 let msg = Message::new(header, buf);
                 match send_queue.send(msg) {
@@ -47,4 +47,6 @@ pub async fn respond(
             error!("[{}] Adding Close message to Server-Queue: {}", id, e);
         }
     };
+
+    raw_read_user_con.invalidate();
 }
