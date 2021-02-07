@@ -231,6 +231,7 @@ impl Manager {
     pub async fn get(&self) -> std::io::Result<(ReadConnection, WriteConnection)> {
         let mut cons = self.avail_cons.lock().await;
         if cons.is_empty() {
+            debug!("Establishing new connection");
             return self.establish_new_con().await;
         }
 

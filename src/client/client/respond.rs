@@ -10,12 +10,14 @@ pub async fn respond(
     send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
     mut raw_read_user_con: pool::connection::Connection<tokio::net::tcp::OwnedReadHalf>,
     users: std::sync::Arc<Connections<mpsc::StreamWriter<Message>>>,
+    is_open: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     let read_user_con = raw_read_user_con.as_mut();
-    loop {
+    while is_open.load(std::sync::atomic::Ordering::SeqCst) {
         let mut buf = vec![0; 4092];
         match read_user_con.read(&mut buf).await {
             Ok(0) => {
+                raw_read_user_con.invalidate();
                 break;
             }
             Ok(n) => {
@@ -33,6 +35,7 @@ pub async fn respond(
             }
             Err(e) => {
                 error!("[{}] Reading: {}", id, e);
+                raw_read_user_con.invalidate();
                 break;
             }
         };
@@ -47,6 +50,4 @@ pub async fn respond(
             error!("[{}] Adding Close message to Server-Queue: {}", id, e);
         }
     };
-
-    raw_read_user_con.invalidate();
 }
