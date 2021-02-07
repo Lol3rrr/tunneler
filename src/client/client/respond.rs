@@ -1,3 +1,4 @@
+use crate::pool;
 use crate::streams::mpsc;
 use crate::{Connections, Message, MessageHeader, MessageType};
 
@@ -7,9 +8,10 @@ use tokio::io::AsyncReadExt;
 pub async fn respond(
     id: u32,
     send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
-    mut read_user_con: tokio::io::ReadHalf<tokio::net::TcpStream>,
+    mut raw_read_user_con: pool::connection::Connection<tokio::net::tcp::OwnedReadHalf>,
     users: std::sync::Arc<Connections<mpsc::StreamWriter<Message>>>,
 ) {
+    let read_user_con = raw_read_user_con.as_mut();
     loop {
         let mut buf = vec![0; 4092];
         match read_user_con.read(&mut buf).await {

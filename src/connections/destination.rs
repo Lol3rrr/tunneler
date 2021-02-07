@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Destination {
     ip: String,
     port: u32,
