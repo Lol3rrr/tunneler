@@ -152,14 +152,16 @@ impl Client {
                     let (tx, rx) = mpsc::stream();
                     // Add the Connection to the current map of user-connection
                     client_cons.set(id, tx.clone());
+                    let open_arc = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
                     // Starting the receive and send tasks for this connection
                     tokio::task::spawn(respond::respond(
                         id,
                         send_queue.clone(),
                         read_con,
                         client_cons.clone(),
+                        open_arc.clone(),
                     ));
-                    tokio::task::spawn(forward::forward(write_con, rx));
+                    tokio::task::spawn(forward::forward(write_con, rx, open_arc));
                     tx
                 }
             };
@@ -187,7 +189,11 @@ impl Client {
 
             let con_pool_arc =
                 std::sync::Arc::new(Manager::new(self.out_destination.clone(), self.pool_size));
-            tokio::task::spawn(Manager::start(con_pool_arc.clone()));
+            Manager::start(con_pool_arc.clone()).await;
+            info!(
+                "Started Connection-Pool with {} Connections",
+                self.pool_size
+            );
 
             let connection_arc = match establish_connection::establish_connection(
                 &self.server_destination.get_full_address(),
