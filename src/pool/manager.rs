@@ -242,6 +242,7 @@ impl Manager {
             return self.establish_new_con().await;
         }
 
+        debug!("Got connection from Pool");
         Ok(cons.remove(0))
     }
 

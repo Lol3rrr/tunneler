@@ -18,6 +18,7 @@ pub struct Client {
     server_destination: Destination,
     out_destination: Destination,
     key: Vec<u8>,
+    pool_size: usize,
 }
 
 impl Client {
@@ -35,10 +36,13 @@ impl Client {
         );
         let out_dest = Destination::new(cli.out_ip, cli.public_port.expect("Loading Public Port"));
 
+        let pool_size = cli.pool_size.unwrap_or(20);
+
         Ok(Client {
             server_destination: server_dest,
             out_destination: out_dest,
             key,
+            pool_size,
         })
     }
 
@@ -181,7 +185,8 @@ impl Client {
                 self.server_destination.get_full_address()
             );
 
-            let con_pool_arc = std::sync::Arc::new(Manager::new(self.out_destination.clone(), 10));
+            let con_pool_arc =
+                std::sync::Arc::new(Manager::new(self.out_destination.clone(), self.pool_size));
             tokio::task::spawn(Manager::start(con_pool_arc.clone()));
 
             let connection_arc = match establish_connection::establish_connection(
