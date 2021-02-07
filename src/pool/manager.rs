@@ -192,7 +192,7 @@ async fn new_manager() {
     let manager = Manager::new(Destination::new("localhost".to_owned(), 12345), max_cons);
 
     assert_eq!(max_cons, manager.max_connections());
-    assert_eq!(0, manager.available_connections());
+    assert_eq!(0, manager.available_connections().await);
 }
 
 #[cfg(test)]
@@ -222,7 +222,7 @@ async fn manager_start_populates_cons() {
     let manager_arc = std::sync::Arc::new(raw_manager);
     Manager::start(manager_arc.clone()).await;
 
-    assert_eq!(5, manager_arc.available_connections());
+    assert_eq!(5, manager_arc.available_connections().await);
 }
 
 #[tokio::test]
@@ -257,14 +257,14 @@ async fn manager_return_drop_read_con_first() {
     let manager_arc = std::sync::Arc::new(raw_manager);
     Manager::start(manager_arc.clone()).await;
 
-    assert_eq!(max_cons, manager_arc.available_connections());
+    assert_eq!(max_cons, manager_arc.available_connections().await);
 
     let get_result = manager_arc.get().await;
     assert_eq!(true, get_result.is_ok());
 
-    assert_eq!(max_cons - 1, manager_arc.available_connections());
+    assert_eq!(max_cons - 1, manager_arc.available_connections().await);
     // Check that no reads were previously marked as needing recovery
-    let tmp_reads = manager_arc.recovered_reads.lock().unwrap();
+    let tmp_reads = manager_arc.recovered_reads.lock().await;
     assert_eq!(0, tmp_reads.len());
     drop(tmp_reads);
 
@@ -275,7 +275,7 @@ async fn manager_return_drop_read_con_first() {
     tokio::task::yield_now().await;
 
     // Check that the one reader were marked as needing recovery
-    let tmp_reads = manager_arc.recovered_reads.lock().unwrap();
+    let tmp_reads = manager_arc.recovered_reads.lock().await;
     assert_eq!(1, tmp_reads.len());
     drop(tmp_reads);
 
@@ -286,7 +286,7 @@ async fn manager_return_drop_read_con_first() {
 
     // Checking that they are now again available
     // and not stored anymore
-    assert_eq!(max_cons, manager_arc.available_connections());
+    assert_eq!(max_cons, manager_arc.available_connections().await);
 }
 
 #[tokio::test]
@@ -304,14 +304,14 @@ async fn manager_return_drop_write_con_first() {
     let manager_arc = std::sync::Arc::new(raw_manager);
     Manager::start(manager_arc.clone()).await;
 
-    assert_eq!(max_cons, manager_arc.available_connections());
+    assert_eq!(max_cons, manager_arc.available_connections().await);
 
     let get_result = manager_arc.get().await;
     assert_eq!(true, get_result.is_ok());
 
-    assert_eq!(max_cons - 1, manager_arc.available_connections());
+    assert_eq!(max_cons - 1, manager_arc.available_connections().await);
     // Check that no reads were previously marked as needing recovery
-    let tmp_reads = manager_arc.recovered_reads.lock().unwrap();
+    let tmp_reads = manager_arc.recovered_reads.lock().await;
     assert_eq!(0, tmp_reads.len());
     drop(tmp_reads);
 
@@ -322,7 +322,7 @@ async fn manager_return_drop_write_con_first() {
     tokio::task::yield_now().await;
 
     // Check that the one reader were marked as needing recovery
-    let tmp_writes = manager_arc.recovered_writes.lock().unwrap();
+    let tmp_writes = manager_arc.recovered_writes.lock().await;
     assert_eq!(1, tmp_writes.len());
     drop(tmp_writes);
 
@@ -333,5 +333,5 @@ async fn manager_return_drop_write_con_first() {
 
     // Checking that they are now again available
     // and not stored anymore
-    assert_eq!(max_cons, manager_arc.available_connections());
+    assert_eq!(max_cons, manager_arc.available_connections().await);
 }
