@@ -130,7 +130,7 @@ impl Manager {
 
             let mut avail_cons = arc.avail_cons.lock().await;
 
-            match Manager::recover(
+            if let Some((read, write)) = Manager::recover(
                 id,
                 is_valid,
                 read_con,
@@ -140,15 +140,11 @@ impl Manager {
             )
             .await
             {
-                Some((read, write)) => {
-                    let pool_read_con = ReadConnection::new(id, read, arc.notify_read_tx.clone());
-                    let pool_write_con =
-                        WriteConnection::new(id, write, arc.notify_write_tx.clone());
-                    avail_cons.push((pool_read_con, pool_write_con));
+                let pool_read_con = ReadConnection::new(id, read, arc.notify_read_tx.clone());
+                let pool_write_con = WriteConnection::new(id, write, arc.notify_write_tx.clone());
+                avail_cons.push((pool_read_con, pool_write_con));
 
-                    debug!("Recovered Connection");
-                }
-                None => {}
+                debug!("Recovered Connection");
             };
         }
     }
@@ -176,7 +172,7 @@ impl Manager {
 
             let mut avail_cons = arc.avail_cons.lock().await;
 
-            match Manager::recover(
+            if let Some((write, read)) = Manager::recover(
                 id,
                 is_valid,
                 write_con,
@@ -186,16 +182,12 @@ impl Manager {
             )
             .await
             {
-                Some((write, read)) => {
-                    let pool_read_con = ReadConnection::new(id, read, arc.notify_read_tx.clone());
-                    let pool_write_con =
-                        WriteConnection::new(id, write, arc.notify_write_tx.clone());
-                    avail_cons.push((pool_read_con, pool_write_con));
+                let pool_read_con = ReadConnection::new(id, read, arc.notify_read_tx.clone());
+                let pool_write_con = WriteConnection::new(id, write, arc.notify_write_tx.clone());
+                avail_cons.push((pool_read_con, pool_write_con));
 
-                    debug!("Recovered Connection");
-                }
-                None => {}
-            };
+                debug!("Recovered Connection");
+            }
         }
     }
 
