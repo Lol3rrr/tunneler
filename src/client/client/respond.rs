@@ -2,7 +2,7 @@ use crate::pool;
 use crate::streams::mpsc;
 use crate::{Connections, Message, MessageHeader, MessageType};
 
-use log::{debug, error};
+use log::error;
 use tokio::io::AsyncReadExt;
 
 pub async fn respond(
@@ -19,8 +19,6 @@ pub async fn respond(
                 break;
             }
             Ok(n) => {
-                debug!("[{}] Read {} Bytes", id, n);
-
                 let header = MessageHeader::new(id, MessageType::Data, n as u64);
                 let msg = Message::new(header, buf);
                 match send_queue.send(msg) {
@@ -49,4 +47,6 @@ pub async fn respond(
             error!("[{}] Adding Close message to Server-Queue: {}", id, e);
         }
     };
+
+    raw_read_user_con.invalidate();
 }

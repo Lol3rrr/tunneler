@@ -7,6 +7,9 @@ use tokio::sync::broadcast::{self, Receiver, Sender};
 
 use rand::Rng;
 
+type NotifyReadMessage = (u64, bool, std::sync::Arc<tokio::net::tcp::OwnedReadHalf>);
+type NotifyWriteMessage = (u64, bool, std::sync::Arc<tokio::net::tcp::OwnedWriteHalf>);
+
 pub struct Manager {
     // The Destination where each connetion should connect to
     dest: Destination,
@@ -15,17 +18,17 @@ pub struct Manager {
     // All available Connection-Pairs
     avail_cons: tokio::sync::Mutex<Vec<(ReadConnection, WriteConnection)>>,
     // The Transmit-Half for all notifcations regarding the Read-Parts
-    notify_read_tx: Sender<(u64, std::sync::Arc<tokio::net::tcp::OwnedReadHalf>)>,
+    notify_read_tx: Sender<NotifyReadMessage>,
     // The Receive-Half for all notifcations regarding the Read-Parts
-    notify_read_rx:
-        tokio::sync::Mutex<Receiver<(u64, std::sync::Arc<tokio::net::tcp::OwnedReadHalf>)>>,
+    notify_read_rx: tokio::sync::Mutex<Receiver<NotifyReadMessage>>,
     // The Transmit-Half for all notifcations regarding the Write-Parts
-    notify_write_tx: Sender<(u64, std::sync::Arc<tokio::net::tcp::OwnedWriteHalf>)>,
+    notify_write_tx: Sender<NotifyWriteMessage>,
     // The Receiver-Half for all notifcations regarding the Write-Parts
-    notify_write_rx:
-        tokio::sync::Mutex<Receiver<(u64, std::sync::Arc<tokio::net::tcp::OwnedWriteHalf>)>>,
+    notify_write_rx: tokio::sync::Mutex<Receiver<NotifyWriteMessage>>,
+    // All the Recovered but not yet completly recovered connections are stored here
     recovered_reads: tokio::sync::Mutex<Vec<(u64, tokio::net::tcp::OwnedReadHalf)>>,
     recovered_writes: tokio::sync::Mutex<Vec<(u64, tokio::net::tcp::OwnedWriteHalf)>>,
+    invalid_ids: tokio::sync::Mutex<Vec<u64>>,
 }
 
 impl Manager {
@@ -43,6 +46,7 @@ impl Manager {
             notify_write_rx: tokio::sync::Mutex::new(write_rx),
             recovered_reads: tokio::sync::Mutex::new(Vec::new()),
             recovered_writes: tokio::sync::Mutex::new(Vec::new()),
+            invalid_ids: tokio::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -56,6 +60,58 @@ impl Manager {
         None
     }
 
+    fn find_id(id: u64, arr: &[u64]) -> Option<usize> {
+        for (index, tmp_id) in arr.iter().enumerate() {
+            if id == *tmp_id {
+                return Some(index);
+            }
+        }
+
+        None
+    }
+
+    /// Actually handles all the recover logic needed for both the Reader- and Writer-Halves
+    async fn recover<C, T>(
+        id: u64,
+        is_valid: bool,
+        con: C,
+        same_recovered: &mut Vec<(u64, C)>,
+        other_recovered: &mut Vec<(u64, T)>,
+        errors: &mut Vec<u64>,
+    ) -> Option<(C, T)> {
+        // Handles all cases where the other Half has already been returned as valid
+        if let Some(index) = Manager::find_con(id, &other_recovered) {
+            let (_, other_con) = other_recovered.remove(index);
+
+            if !is_valid {
+                return None;
+            }
+
+            return Some((con, other_con));
+        }
+
+        // If an entry with the same id was made to the errored list
+        // remove it and drop the current connection as well
+        if let Some(index) = Manager::find_id(id, &errors) {
+            errors.remove(index);
+            return None;
+        }
+
+        // Handles all the cases the other half has not yet been returned or
+        // was returned as invalid and this half is not valid
+        if !is_valid {
+            errors.push(id);
+
+            return None;
+        }
+
+        // If this half is valid and the other half was not returned yet, simply
+        // add it the list of returned and valid halves
+        same_recovered.push((id, con));
+
+        None
+    }
+
     /// Takes the Mutex for the Read-Receiver and then enters
     /// an infinite loop that always tries to receive a Read
     /// Half that will then be made available again once the
@@ -63,7 +119,7 @@ impl Manager {
     async fn recover_read_loop(arc: std::sync::Arc<Self>) {
         let mut rx = arc.notify_read_rx.lock().await;
         loop {
-            let (id, raw_read_con) = match rx.recv().await {
+            let (id, is_valid, raw_read_con) = match rx.recv().await {
                 Ok(m) => m,
                 Err(e) => {
                     error!("Reading Pool-Read-Receiver: {}", e);
@@ -73,24 +129,30 @@ impl Manager {
 
             let read_con = std::sync::Arc::try_unwrap(raw_read_con).unwrap();
 
-            // Checking if the Write Part was already returned
-            let mut tmp_writes = arc.recovered_writes.lock().await;
-            if let Some(index) = Manager::find_con(id, &tmp_writes) {
-                let (_, write_con) = tmp_writes.remove(index);
-
-                let mut avail_cons = arc.avail_cons.lock().await;
-
-                let pool_read_con = ReadConnection::new(id, read_con, arc.notify_read_tx.clone());
-                let pool_write_con =
-                    WriteConnection::new(id, write_con, arc.notify_write_tx.clone());
-                avail_cons.push((pool_read_con, pool_write_con));
-
-                continue;
-            };
-            drop(tmp_writes);
-
             let mut tmp_reads = arc.recovered_reads.lock().await;
-            tmp_reads.push((id, read_con));
+            let mut tmp_writes = arc.recovered_writes.lock().await;
+            let mut errored_ids = arc.invalid_ids.lock().await;
+
+            let mut avail_cons = arc.avail_cons.lock().await;
+
+            match Manager::recover(
+                id,
+                is_valid,
+                read_con,
+                &mut tmp_reads,
+                &mut tmp_writes,
+                &mut errored_ids,
+            )
+            .await
+            {
+                Some((read, write)) => {
+                    let pool_read_con = ReadConnection::new(id, read, arc.notify_read_tx.clone());
+                    let pool_write_con =
+                        WriteConnection::new(id, write, arc.notify_write_tx.clone());
+                    avail_cons.push((pool_read_con, pool_write_con));
+                }
+                None => {}
+            };
         }
     }
 
@@ -101,7 +163,7 @@ impl Manager {
     async fn recover_write_loop(arc: std::sync::Arc<Self>) {
         let mut rx = arc.notify_write_rx.lock().await;
         loop {
-            let (id, raw_write_con) = match rx.recv().await {
+            let (id, is_valid, raw_write_con) = match rx.recv().await {
                 Ok(m) => m,
                 Err(e) => {
                     error!("Reading Pool-Write-Receiver: {}", e);
@@ -111,24 +173,30 @@ impl Manager {
 
             let write_con = std::sync::Arc::try_unwrap(raw_write_con).unwrap();
 
-            // Checking if the Write Part was already returned
             let mut tmp_reads = arc.recovered_reads.lock().await;
-            if let Some(index) = Manager::find_con(id, &tmp_reads) {
-                let (_, read_con) = tmp_reads.remove(index);
-
-                let mut avail_cons = arc.avail_cons.lock().await;
-
-                let pool_read_con = ReadConnection::new(id, read_con, arc.notify_read_tx.clone());
-                let pool_write_con =
-                    WriteConnection::new(id, write_con, arc.notify_write_tx.clone());
-                avail_cons.push((pool_read_con, pool_write_con));
-
-                continue;
-            };
-            drop(tmp_reads);
-
             let mut tmp_writes = arc.recovered_writes.lock().await;
-            tmp_writes.push((id, write_con));
+            let mut errored_ids = arc.invalid_ids.lock().await;
+
+            let mut avail_cons = arc.avail_cons.lock().await;
+
+            match Manager::recover(
+                id,
+                is_valid,
+                write_con,
+                &mut tmp_writes,
+                &mut tmp_reads,
+                &mut errored_ids,
+            )
+            .await
+            {
+                Some((write, read)) => {
+                    let pool_read_con = ReadConnection::new(id, read, arc.notify_read_tx.clone());
+                    let pool_write_con =
+                        WriteConnection::new(id, write, arc.notify_write_tx.clone());
+                    avail_cons.push((pool_read_con, pool_write_con));
+                }
+                None => {}
+            };
         }
     }
 
@@ -159,6 +227,7 @@ impl Manager {
         let (r, w) = raw_con.into_split();
 
         let con_id = rand::thread_rng().gen();
+
         let read_con = ReadConnection::new(con_id, r, self.notify_read_tx.clone());
         let write_con = WriteConnection::new(con_id, w, self.notify_write_tx.clone());
 
@@ -209,7 +278,7 @@ async fn test_tcp_server_accept(listener: tokio::net::TcpListener, accept_count:
 
 #[tokio::test]
 async fn manager_start_populates_cons() {
-    let port = 8080;
+    let port = 9080;
 
     let bind_adr = format!("127.0.0.1:{}", port);
     let listener_result = tokio::net::TcpListener::bind(&bind_adr).await;
@@ -227,7 +296,7 @@ async fn manager_start_populates_cons() {
 
 #[tokio::test]
 async fn manager_get() {
-    let port = 8081;
+    let port = 9081;
 
     let bind_adr = format!("127.0.0.1:{}", port);
     let listener_result = tokio::net::TcpListener::bind(&bind_adr).await;
@@ -244,7 +313,7 @@ async fn manager_get() {
 
 #[tokio::test]
 async fn manager_return_drop_read_con_first() {
-    let port = 8082;
+    let port = 9082;
     let max_cons: usize = 5;
 
     let bind_adr = format!("127.0.0.1:{}", port);
@@ -291,7 +360,7 @@ async fn manager_return_drop_read_con_first() {
 
 #[tokio::test]
 async fn manager_return_drop_write_con_first() {
-    let port = 8083;
+    let port = 9083;
     let max_cons: usize = 5;
 
     let bind_adr = format!("127.0.0.1:{}", port);
@@ -334,4 +403,102 @@ async fn manager_return_drop_write_con_first() {
     // Checking that they are now again available
     // and not stored anymore
     assert_eq!(max_cons, manager_arc.available_connections().await);
+}
+
+#[tokio::test]
+async fn manager_return_drop_invalid_valid() {
+    let port = 9084;
+    let max_cons: usize = 5;
+
+    let bind_adr = format!("127.0.0.1:{}", port);
+    let listener_result = tokio::net::TcpListener::bind(&bind_adr).await;
+    assert_eq!(true, listener_result.is_ok());
+    let listener = listener_result.unwrap();
+    tokio::task::spawn(test_tcp_server_accept(listener, max_cons as u32));
+
+    let raw_manager = Manager::new(Destination::new("127.0.0.1".to_owned(), port), max_cons);
+    let manager_arc = std::sync::Arc::new(raw_manager);
+    Manager::start(manager_arc.clone()).await;
+
+    assert_eq!(max_cons, manager_arc.available_connections().await);
+
+    let get_result = manager_arc.get().await;
+    assert_eq!(true, get_result.is_ok());
+
+    assert_eq!(max_cons - 1, manager_arc.available_connections().await);
+
+    let (mut read, write) = get_result.unwrap();
+    read.invalidate();
+    drop(read);
+
+    // To allow for the collect task to recv the drop message
+    tokio::task::yield_now().await;
+
+    // Check that the one reader were marked as needing recovery
+
+    drop(write);
+
+    // To allow for the collect task to recv the drop message
+    tokio::task::yield_now().await;
+
+    // Checking that they are not made available again
+    // and not stored anywhere anymore
+    assert_eq!(max_cons - 1, manager_arc.available_connections().await);
+    // Checking that no more reads are marked as in recovery
+    let tmp_reads = manager_arc.recovered_reads.lock().await;
+    assert_eq!(0, tmp_reads.len());
+    drop(tmp_reads);
+    // Checking that no more reads are marked as in recovery
+    let tmp_writes = manager_arc.recovered_writes.lock().await;
+    assert_eq!(0, tmp_writes.len());
+    drop(tmp_writes);
+}
+
+#[tokio::test]
+async fn manager_return_drop_valid_invalid() {
+    let port = 9085;
+    let max_cons: usize = 5;
+
+    let bind_adr = format!("127.0.0.1:{}", port);
+    let listener_result = tokio::net::TcpListener::bind(&bind_adr).await;
+    assert_eq!(true, listener_result.is_ok());
+    let listener = listener_result.unwrap();
+    tokio::task::spawn(test_tcp_server_accept(listener, max_cons as u32));
+
+    let raw_manager = Manager::new(Destination::new("127.0.0.1".to_owned(), port), max_cons);
+    let manager_arc = std::sync::Arc::new(raw_manager);
+    Manager::start(manager_arc.clone()).await;
+
+    assert_eq!(max_cons, manager_arc.available_connections().await);
+
+    let get_result = manager_arc.get().await;
+    assert_eq!(true, get_result.is_ok());
+
+    assert_eq!(max_cons - 1, manager_arc.available_connections().await);
+
+    let (read, mut write) = get_result.unwrap();
+    drop(read);
+
+    // To allow for the collect task to recv the drop message
+    tokio::task::yield_now().await;
+
+    // Check that the one reader were marked as needing recovery
+
+    write.invalidate();
+    drop(write);
+
+    // To allow for the collect task to recv the drop message
+    tokio::task::yield_now().await;
+
+    // Checking that they are not made available again
+    // and not stored anywhere anymore
+    assert_eq!(max_cons - 1, manager_arc.available_connections().await);
+    // Checking that no more reads are marked as in recovery
+    let tmp_reads = manager_arc.recovered_reads.lock().await;
+    assert_eq!(0, tmp_reads.len());
+    drop(tmp_reads);
+    // Checking that no more reads are marked as in recovery
+    let tmp_writes = manager_arc.recovered_writes.lock().await;
+    assert_eq!(0, tmp_writes.len());
+    drop(tmp_writes);
 }

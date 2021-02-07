@@ -26,6 +26,7 @@ pub async fn forward(
             Ok(_) => {}
             Err(e) => {
                 error!("Sending to User-con: {}", e);
+                raw_write_user_con.invalidate();
                 return;
             }
         };
