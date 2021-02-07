@@ -1,6 +1,8 @@
 mod error;
 pub use error::Error;
 
+pub mod pool;
+
 pub mod general;
 pub mod streams;
 
