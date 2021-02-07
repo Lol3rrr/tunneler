@@ -13,7 +13,7 @@ pub struct Manager {
     // The maximum number of connects held by this pool
     max_cons: usize,
     // All available Connection-Pairs
-    avail_cons: std::sync::Mutex<Vec<(ReadConnection, WriteConnection)>>,
+    avail_cons: tokio::sync::Mutex<Vec<(ReadConnection, WriteConnection)>>,
     // The Transmit-Half for all notifcations regarding the Read-Parts
     notify_read_tx: Sender<(u64, std::sync::Arc<tokio::net::tcp::OwnedReadHalf>)>,
     // The Receive-Half for all notifcations regarding the Read-Parts
@@ -24,8 +24,8 @@ pub struct Manager {
     // The Receiver-Half for all notifcations regarding the Write-Parts
     notify_write_rx:
         tokio::sync::Mutex<Receiver<(u64, std::sync::Arc<tokio::net::tcp::OwnedWriteHalf>)>>,
-    recovered_reads: std::sync::Mutex<Vec<(u64, tokio::net::tcp::OwnedReadHalf)>>,
-    recovered_writes: std::sync::Mutex<Vec<(u64, tokio::net::tcp::OwnedWriteHalf)>>,
+    recovered_reads: tokio::sync::Mutex<Vec<(u64, tokio::net::tcp::OwnedReadHalf)>>,
+    recovered_writes: tokio::sync::Mutex<Vec<(u64, tokio::net::tcp::OwnedWriteHalf)>>,
 }
 
 impl Manager {
@@ -35,18 +35,18 @@ impl Manager {
 
         Self {
             dest,
-            max_cons: max_cons,
-            avail_cons: std::sync::Mutex::new(Vec::with_capacity(max_cons)),
+            max_cons,
+            avail_cons: tokio::sync::Mutex::new(Vec::with_capacity(max_cons)),
             notify_read_tx: read_tx,
             notify_read_rx: tokio::sync::Mutex::new(read_rx),
             notify_write_tx: write_tx,
             notify_write_rx: tokio::sync::Mutex::new(write_rx),
-            recovered_reads: std::sync::Mutex::new(Vec::new()),
-            recovered_writes: std::sync::Mutex::new(Vec::new()),
+            recovered_reads: tokio::sync::Mutex::new(Vec::new()),
+            recovered_writes: tokio::sync::Mutex::new(Vec::new()),
         }
     }
 
-    fn find_con<C>(id: u64, arr: &Vec<(u64, C)>) -> Option<usize> {
+    fn find_con<C>(id: u64, arr: &[(u64, C)]) -> Option<usize> {
         for (index, (tmp_id, _)) in arr.iter().enumerate() {
             if id == *tmp_id {
                 return Some(index);
@@ -74,26 +74,22 @@ impl Manager {
             let read_con = std::sync::Arc::try_unwrap(raw_read_con).unwrap();
 
             // Checking if the Write Part was already returned
-            let mut tmp_writes = arc.recovered_writes.lock().unwrap();
-            match Manager::find_con(id, &tmp_writes) {
-                Some(index) => {
-                    let (_, write_con) = tmp_writes.remove(index);
+            let mut tmp_writes = arc.recovered_writes.lock().await;
+            if let Some(index) = Manager::find_con(id, &tmp_writes) {
+                let (_, write_con) = tmp_writes.remove(index);
 
-                    let mut avail_cons = arc.avail_cons.lock().unwrap();
+                let mut avail_cons = arc.avail_cons.lock().await;
 
-                    let pool_read_con =
-                        ReadConnection::new(id, read_con, arc.notify_read_tx.clone());
-                    let pool_write_con =
-                        WriteConnection::new(id, write_con, arc.notify_write_tx.clone());
-                    avail_cons.push((pool_read_con, pool_write_con));
+                let pool_read_con = ReadConnection::new(id, read_con, arc.notify_read_tx.clone());
+                let pool_write_con =
+                    WriteConnection::new(id, write_con, arc.notify_write_tx.clone());
+                avail_cons.push((pool_read_con, pool_write_con));
 
-                    continue;
-                }
-                None => {}
+                continue;
             };
             drop(tmp_writes);
 
-            let mut tmp_reads = arc.recovered_reads.lock().unwrap();
+            let mut tmp_reads = arc.recovered_reads.lock().await;
             tmp_reads.push((id, read_con));
         }
     }
@@ -116,26 +112,22 @@ impl Manager {
             let write_con = std::sync::Arc::try_unwrap(raw_write_con).unwrap();
 
             // Checking if the Write Part was already returned
-            let mut tmp_reads = arc.recovered_reads.lock().unwrap();
-            match Manager::find_con(id, &tmp_reads) {
-                Some(index) => {
-                    let (_, read_con) = tmp_reads.remove(index);
+            let mut tmp_reads = arc.recovered_reads.lock().await;
+            if let Some(index) = Manager::find_con(id, &tmp_reads) {
+                let (_, read_con) = tmp_reads.remove(index);
 
-                    let mut avail_cons = arc.avail_cons.lock().unwrap();
+                let mut avail_cons = arc.avail_cons.lock().await;
 
-                    let pool_read_con =
-                        ReadConnection::new(id, read_con, arc.notify_read_tx.clone());
-                    let pool_write_con =
-                        WriteConnection::new(id, write_con, arc.notify_write_tx.clone());
-                    avail_cons.push((pool_read_con, pool_write_con));
+                let pool_read_con = ReadConnection::new(id, read_con, arc.notify_read_tx.clone());
+                let pool_write_con =
+                    WriteConnection::new(id, write_con, arc.notify_write_tx.clone());
+                avail_cons.push((pool_read_con, pool_write_con));
 
-                    continue;
-                }
-                None => {}
+                continue;
             };
             drop(tmp_reads);
 
-            let mut tmp_writes = arc.recovered_writes.lock().unwrap();
+            let mut tmp_writes = arc.recovered_writes.lock().await;
             tmp_writes.push((id, write_con));
         }
     }
@@ -143,7 +135,7 @@ impl Manager {
     /// Starts 2 Tasks that are used to "recover" the dropped connections
     /// as well as fills the pool with initial connections
     pub async fn start(pool_arc: std::sync::Arc<Self>) {
-        let mut cons = pool_arc.avail_cons.lock().unwrap();
+        let mut cons = pool_arc.avail_cons.lock().await;
         for _ in 0..pool_arc.max_connections() {
             match pool_arc.establish_new_con().await {
                 Ok((read, write)) => {
@@ -177,7 +169,7 @@ impl Manager {
     /// Each connection can be used seperately although they are only returned
     /// to the pool once both have been dropped.
     pub async fn get(&self) -> std::io::Result<(ReadConnection, WriteConnection)> {
-        let mut cons = self.avail_cons.lock().unwrap();
+        let mut cons = self.avail_cons.lock().await;
         if cons.is_empty() {
             return self.establish_new_con().await;
         }
@@ -185,8 +177,8 @@ impl Manager {
         Ok(cons.remove(0))
     }
 
-    pub fn available_connections(&self) -> usize {
-        let cons = self.avail_cons.lock().unwrap();
+    pub async fn available_connections(&self) -> usize {
+        let cons = self.avail_cons.lock().await;
         cons.len()
     }
     pub fn max_connections(&self) -> usize {
@@ -194,8 +186,8 @@ impl Manager {
     }
 }
 
-#[test]
-fn new_manager() {
+#[tokio::test]
+async fn new_manager() {
     let max_cons = 5;
     let manager = Manager::new(Destination::new("localhost".to_owned(), 12345), max_cons);
 
