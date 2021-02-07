@@ -10,14 +10,12 @@ pub async fn respond(
     send_queue: tokio::sync::mpsc::UnboundedSender<Message>,
     mut raw_read_user_con: pool::connection::Connection<tokio::net::tcp::OwnedReadHalf>,
     users: std::sync::Arc<Connections<mpsc::StreamWriter<Message>>>,
-    is_open: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) {
     let read_user_con = raw_read_user_con.as_mut();
-    while is_open.load(std::sync::atomic::Ordering::SeqCst) {
+    loop {
         let mut buf = vec![0; 4092];
         match read_user_con.read(&mut buf).await {
             Ok(0) => {
-                raw_read_user_con.invalidate();
                 break;
             }
             Ok(n) => {
