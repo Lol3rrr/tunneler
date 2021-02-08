@@ -1,15 +1,13 @@
-use crate::pool;
-use crate::streams::{mpsc, RecvError};
-use crate::Message;
+use tunneler_core::message::Message;
+use tunneler_core::streams::{error::RecvError, mpsc};
 
 use log::error;
 use tokio::io::AsyncWriteExt;
 
 pub async fn forward(
-    mut raw_write_user_con: pool::connection::Connection<tokio::net::tcp::OwnedWriteHalf>,
+    mut write_user_con: tokio::net::tcp::OwnedWriteHalf,
     mut receive_queue: mpsc::StreamReader<Message>,
 ) {
-    let write_user_con = raw_write_user_con.as_mut();
     loop {
         let message = match receive_queue.recv().await {
             Ok(msg) => msg,
@@ -26,7 +24,6 @@ pub async fn forward(
             Ok(_) => {}
             Err(e) => {
                 error!("Sending to User-con: {}", e);
-                raw_write_user_con.invalidate();
                 return;
             }
         };

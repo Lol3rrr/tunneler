@@ -57,11 +57,11 @@ fn main() {
 
     match command.unwrap() {
         Command::Server => {
-            let server = Server::new_from_args(arguments).unwrap();
+            let server = CliServer::new_from_args(arguments);
             rt.block_on(server.start()).unwrap();
         }
         Command::Client => {
-            let client = Client::new_from_args(arguments).unwrap();
+            let client = CliClient::new_from_args(arguments);
             rt.block_on(client.start()).unwrap();
         }
         Command::GenerateKey => {

@@ -11,22 +11,15 @@ log = "0.4.11"
 env_logger = "0.8.2"
 structopt = "0.3.21"
 tokio = { version = "1.1.0", features = ["rt", "net", "rt-multi-thread", "io-util", "time", "sync", "macros"] }
-rand = { version = "0.7.0", features = ["getrandom"] }
 num_cpus = "1.13.0"
 dashmap = { version = "4.0.2" }
-rsa = { version = "0.3.0" }
 dirs = { version = "3.0.1" }
-base64 = { version = "0.13.0" }
 chrono = { version = "0.4.19" }
 fnv= { version = "1.0.7" }
+base64 = { version = "0.13.0" }
+rand = { version = "0.7.0", features = ["getrandom"] }
 
-[dev-dependencies]
-criterion = "0.3"
-
-[[bench]]
-name = "my_benchmark"
-harness = false
-path = "./benches/my_benchmark.rs"
+tunneler-core = { version = "0.1.2" }
 
 [profile.release]
 lto = true
