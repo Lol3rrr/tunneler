@@ -1,4 +1,4 @@
-FROM rust:1.43 as builder
+FROM rust:1.49 as builder
 
 RUN USER=root cargo new --bin tunneler
 WORKDIR ./tunneler
