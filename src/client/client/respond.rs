@@ -15,7 +15,7 @@ pub async fn respond(
                 break;
             }
             Ok(n) => {
-                match send_queue.send(buf, n as u64) {
+                match send_queue.send(buf, n as u64).await {
                     true => {}
                     false => {
                         error!("[{}] Adding Data to Queue", id);
