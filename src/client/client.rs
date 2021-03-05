@@ -46,9 +46,13 @@ impl CliClient {
         let con = dest.unwrap().connect().await.unwrap();
         let (read_con, write_con) = con.into_split();
 
-        // Starting the receive and send tasks for this connection
+        // Start the new task
         tokio::task::spawn(respond::respond(id, tx, read_con));
-        tokio::task::spawn(forward::forward(write_con, rx));
+
+        // This can stay on the current task, because that is already
+        // running a seperate tokio::Task and will therefore not
+        // hold up anything else
+        forward::forward(write_con, rx).await;
     }
 
     pub async fn start(self) -> std::io::Result<()> {
