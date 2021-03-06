@@ -835,9 +835,9 @@ dependencies = [
 
 [[package]]
 name = "tunneler-core"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97286ed4c54abdfa33c2f5fe9cb2ddaef00b6f0619a18899e83a793b08f2e9b2"
+checksum = "341c3a66ed6e62d4aeead244af8bed404eec321f1d681bf967a3e77731aebe11"
 dependencies = [
  "async-trait",
  "base64",
