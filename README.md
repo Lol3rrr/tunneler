@@ -11,8 +11,8 @@ it should also be random enough, you can simply run:
 
 `tunneler key-gen`
 
-The Key-File is assumed to be located at "$HOME/.tunneler/key" by default, this can be changed using the `KEY_FILE`
-environment variable or using the command-line option `-k`/`--key` followed by the path.
+The Key-File is assumed to be located at "$HOME/.tunneler/key" by default, this can be changed 
+using the command-line option `-k`/`--key` followed by the path.
 
 ### Server
 This should run on the public side, where all the external requests come in and are then forwarded from here to all
@@ -22,10 +22,20 @@ The Server can be started using the command:
 `tunneler server`
 
 Command-line Options:
-key | Description
---- | ---
--p | The Port on where the Server listens for the actual requests by users
--l | The Port on where the Clients connect to
+key | Required | Description
+--- | --- | ---
+-p {ports} | true | The Port(s) on where the Server listens for the actual requests by users
+-l {port} | true | The Port on where the Clients connect to
+--key {path} | false | The Path from which the Auth-Key is loaded
+--threads {count} | false | The Number of threads to use for the Runtime
+
+Port-Options:
+Name | Example | Description
+--- | --- | ---
+Single | 8080 | Will only open one Port(8080) for User-Requests
+Multiple | 8080,8081 | Will only allow for the listed ports(8080, 8081) to be opened for User-Requests
+Dynamic | .. | Will allow for all requested ports to be opened for User-Requests
+Dynamic-Range | 8080..8090 | Will allow for all Ports in the Range to be opened for User-Requests
 
 ### Client
 This part connects to the Server-Part and forwards all data it receives on individual TCP-Connections to the
@@ -35,9 +45,12 @@ The Client can be started using the command:
 `tunneler client`
 
 Command-line Options:
-key | Description
---- | ---
---ip {port} | The IP/Address of the external server to which the client should connet to
--l {port} | The Port on which the external server listens for clients
---out-ip {port} | The IP/Address to which the requests should be forwarded to
--p {port} | The Port to which the requests should be forwared to
+key | Required | Description
+--- | --- | ---
+--ip {ip} | true | The IP/Address of the external server to which the client should connet to
+-l {port} | true | The Port on which the external server listens for clients
+-p {port} | true | The External Port on the Server-Instance where the connections will connect to from users
+--target-port {port} | true | The Port to which the requests should be forwared to
+--target-ip {ip} | true | The IP/Address to which the requests should be forwarded to
+--key {path} | false | The Path from which the Auth-Key is loaded
+--threads {count} | false | The Number of threads to use for the Runtime

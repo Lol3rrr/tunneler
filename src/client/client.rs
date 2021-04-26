@@ -1,5 +1,3 @@
-use crate::Arguments;
-
 use tunneler_core::client::queues;
 use tunneler_core::client::Client;
 use tunneler_core::message::Message;
@@ -15,21 +13,21 @@ pub struct CliClient {
 }
 
 impl CliClient {
-    pub fn new_from_args(cli: Arguments) -> Self {
-        if cli.server_ip.is_none() {
-            panic!("Missing IP");
-        }
-
-        let raw_key = std::fs::read(cli.key_path.unwrap()).expect("Reading Key File");
+    pub fn new_from_args(
+        server_ip: String,
+        server_listen_port: u32,
+        external_port: u16,
+        key_path: String,
+        target_ip: String,
+        target_port: u32,
+    ) -> Self {
+        let raw_key = std::fs::read(key_path).expect("Reading Key File");
         let key = base64::decode(raw_key).unwrap();
 
-        let server_dest = Destination::new(
-            cli.server_ip.expect("Loading Server-Address"),
-            cli.listen_port.expect("Loading Server-Listening Port"),
-        );
-        let out_dest = Destination::new(cli.out_ip, cli.public_port.expect("Loading Public Port"));
+        let server_dest = Destination::new(server_ip, server_listen_port);
+        let out_dest = Destination::new(target_ip, target_port);
 
-        let client = Client::new(server_dest, key);
+        let client = Client::new(server_dest, external_port, key);
 
         Self {
             client,
