@@ -1,14 +1,21 @@
-use tunneler_core::client::queues;
-use tunneler_core::client::Client;
+use std::sync::Arc;
+
 use tunneler_core::message::Message;
 use tunneler_core::streams::mpsc;
 use tunneler_core::Destination;
+use tunneler_core::{client::QueueSender, metrics::Empty};
+use tunneler_core::{
+    client::{Client, Handler},
+    Details,
+};
+
+use async_trait::async_trait;
 
 mod forward;
 mod respond;
 
 pub struct CliClient {
-    client: Client,
+    client: Client<Empty>,
     out_destination: Destination,
 }
 
@@ -35,13 +42,35 @@ impl CliClient {
         }
     }
 
-    async fn handler(
+    pub async fn start(self) -> std::io::Result<()> {
+        let handler = ForwardHandler {
+            destination: self.out_destination,
+        };
+
+        self.client.start(Arc::new(handler)).await
+    }
+}
+
+pub struct ForwardHandler {
+    destination: Destination,
+}
+
+#[async_trait]
+impl Handler for ForwardHandler {
+    async fn new_con(
+        self: Arc<Self>,
         id: u32,
+        _details: Details,
         rx: mpsc::StreamReader<Message>,
-        tx: queues::Sender,
-        dest: Option<Destination>,
+        tx: QueueSender,
     ) {
-        let con = dest.unwrap().connect().await.unwrap();
+        let con = match self.destination.connect().await {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("Connecting to Destination: {:?}", e);
+                return;
+            }
+        };
         let (read_con, write_con) = con.into_split();
 
         // Start the new task
@@ -51,11 +80,5 @@ impl CliClient {
         // running a seperate tokio::Task and will therefore not
         // hold up anything else
         forward::forward(write_con, rx).await;
-    }
-
-    pub async fn start(self) -> std::io::Result<()> {
-        self.client
-            .start(Self::handler, Some(self.out_destination))
-            .await
     }
 }

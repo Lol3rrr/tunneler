@@ -18,7 +18,9 @@ chrono = { version = "0.4.19" }
 fnv= { version = "1.0.7" }
 base64 = { version = "0.13.0" }
 rand = { version = "0.7.0", features = ["getrandom"] }
-tunneler-core = { version = "0.9.5" }
+async-trait = "0.1.42"
+
+tunneler-core = { version = "0.10.0" }
 
 [profile.release]
 lto = true

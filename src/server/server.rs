@@ -1,8 +1,11 @@
-use tunneler_core::server::{Server, Strategy};
+use tunneler_core::{
+    metrics::Empty,
+    server::{Server, Strategy},
+};
 
 #[derive(Debug)]
 pub struct CliServer {
-    server: Server,
+    server: Server<Empty>,
 }
 
 impl CliServer {

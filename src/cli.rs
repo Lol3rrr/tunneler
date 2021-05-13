@@ -49,10 +49,10 @@ pub enum Arguments {
 }
 
 fn parse_strategy(src: &str) -> Result<Strategy, String> {
-    if let Some(_) = src.find(",") {
+    if src.contains(',') {
         let mut result: Vec<u16> = Vec::with_capacity(2);
 
-        for raw_tmp in src.split(",") {
+        for raw_tmp in src.split(',') {
             if let Ok(tmp) = raw_tmp.parse() {
                 result.push(tmp);
             }
@@ -60,7 +60,7 @@ fn parse_strategy(src: &str) -> Result<Strategy, String> {
 
         return Ok(Strategy::Multiple(result));
     }
-    if let Some(_) = src.find("..") {
+    if src.contains("..") {
         if src.len() == 2 {
             return Ok(Strategy::Dynamic(None));
         }
