@@ -24,7 +24,6 @@ jobs:
         with:
           builder: ${{ steps.builder-amd64.outputs.name }}
           push: true
-          context: .
           platforms: linux/amd64
           tags: lol3r/tunneler:latest
       - name: Set up Docker Buildx ARM/7
@@ -35,6 +34,5 @@ jobs:
         with:
           builder: ${{ steps.builder-arm7.outputs.name }}
           push: true
-          context: .
           platforms: linux/arm/v7
           tags: lol3r/tunneler:latest
