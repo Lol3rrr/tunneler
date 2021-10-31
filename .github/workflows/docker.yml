@@ -26,5 +26,5 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           push: true
-          platforms: matrix.platform
+          platforms: ${{ matrix.platform }}
           tags: lol3r/tunneler:latest
