@@ -1,11 +1,11 @@
-FROM rust:1.56 as builder
+FROM --platform=$BUILDPLATFORM rust:1.56 as builder
 
 RUN USER=root cargo new --bin tunneler
 WORKDIR ./tunneler
 COPY . ./
 RUN cargo build --release
 
-FROM debian:buster-slim
+FROM --platform=$BUILDPLATFORM debian:buster-slim
 ARG APP=/usr/src/app
 
 RUN mkdir -p ${APP}
