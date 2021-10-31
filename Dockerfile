@@ -1,14 +1,8 @@
-FROM rust:1.52.1 as builder
+FROM rust:1.56 as builder
 
 RUN USER=root cargo new --bin tunneler
 WORKDIR ./tunneler
-COPY ./Cargo.toml ./Cargo.toml
-RUN cargo build --release
-RUN rm src/*.rs
-
-ADD . ./
-
-RUN rm ./target/release/deps/tunneler*
+COPY . ./
 RUN cargo build --release
 
 FROM debian:buster-slim
