@@ -19,19 +19,14 @@ WORKDIR /code
 COPY ./Cargo.toml /code/Cargo.toml
 COPY ./Cargo.lock /code/Cargo.lock
 COPY ./src /code/src
-COPY --from=server-sources /code/.cargo /code/.cargo
-COPY --from=server-sources /code/vendor /code/vendor
+COPY --from=sources /code/.cargo /code/.cargo
+COPY --from=sources /code/vendor /code/vendor
 
 RUN cargo build --release --offline
-
-FROM --platform=$BUILDPLATFORM rust:1.56 as builder
-
-WORKDIR ./tunneler
-COPY . ./
-RUN cargo build --release
 RUN rustc --print cfg
 
-FROM --platform=$BUILDPLATFORM debian:buster-slim
+
+FROM debian:buster-slim
 ARG APP=/usr/src/app
 
 RUN mkdir -p ${APP}
