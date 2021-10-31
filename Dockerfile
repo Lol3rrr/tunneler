@@ -4,6 +4,7 @@ RUN USER=root cargo new --bin tunneler
 WORKDIR ./tunneler
 COPY . ./
 RUN cargo build --release
+RUN rustc --print cfg
 
 FROM --platform=$BUILDPLATFORM debian:buster-slim
 ARG APP=/usr/src/app
