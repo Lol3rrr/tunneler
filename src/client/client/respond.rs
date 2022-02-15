@@ -1,11 +1,10 @@
-use tunneler_core::client::QueueSender;
-
 use log::error;
 use tokio::io::AsyncReadExt;
+use tunneler_core::client::{user_con::OwnedSender, Sender};
 
 pub async fn respond(
     id: u32,
-    send_queue: QueueSender,
+    send_queue: OwnedSender,
     mut read_user_con: tokio::net::tcp::OwnedReadHalf,
 ) {
     loop {
@@ -15,10 +14,10 @@ pub async fn respond(
                 break;
             }
             Ok(n) => {
-                match send_queue.send(buf, n as u64).await {
-                    true => {}
-                    false => {
-                        error!("[{}] Adding Data to Queue", id);
+                match send_queue.send_msg(buf, n as u64).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("[{}] Sending Message: {}", id, e);
                     }
                 };
             }

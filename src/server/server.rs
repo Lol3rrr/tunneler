@@ -18,7 +18,7 @@ impl CliServer {
         Self { server }
     }
 
-    pub async fn start(self) -> std::io::Result<()> {
-        self.server.start().await
+    pub async fn start(self) -> Result<(), ()> {
+        self.server.listen().await
     }
 }

@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use tunneler_core::message::Message;
-use tunneler_core::streams::mpsc;
+use tunneler_core::client::UserCon;
+use tunneler_core::metrics::Empty;
 use tunneler_core::Destination;
-use tunneler_core::{client::QueueSender, metrics::Empty};
 use tunneler_core::{
     client::{Client, Handler},
     Details,
@@ -57,13 +56,7 @@ pub struct ForwardHandler {
 
 #[async_trait]
 impl Handler for ForwardHandler {
-    async fn new_con(
-        self: Arc<Self>,
-        id: u32,
-        _details: Details,
-        rx: mpsc::StreamReader<Message>,
-        tx: QueueSender,
-    ) {
+    async fn new_con(self: Arc<Self>, id: u32, _: Details, connection: UserCon) {
         let con = match self.destination.connect().await {
             Ok(c) => c,
             Err(e) => {
@@ -72,6 +65,8 @@ impl Handler for ForwardHandler {
             }
         };
         let (read_con, write_con) = con.into_split();
+
+        let (rx, tx) = connection.into_split();
 
         // Start the new task
         tokio::task::spawn(respond::respond(id, tx, read_con));
