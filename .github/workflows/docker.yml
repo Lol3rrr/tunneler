@@ -1,12 +1,23 @@
 name: Build Docker
 on:
   push:
-    branches: master
+    tags:
+      - 'v*'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
+    - name: Docker meta
+        id: docker_meta
+        uses: crazy-max/ghaction-docker-meta@v1
+        with:
+          images: lol3r/tunneler
+          tag-latest: true
+          tag-semver: |
+            {{version}}
+            {{major}}.{{minor}}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
         with:
@@ -24,4 +35,4 @@ jobs:
         with:
           push: true
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          tags: lol3r/tunneler:latest
+          tags: ${{ steps.docker_meta.outputs.tags }}
